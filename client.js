@@ -28,8 +28,8 @@ const THREADS_PREFIX = 'dsh.sidebar-agent.v1:';
 const CHILD_PREFIX = 'dsh.sidebar-agent.child.v1:';
 const TAB_PREFIX = 'dsh.sidebar-agent.tab.v1:';
 const STYLE_ATTR = 'data-dsh-sidebar-agent-style';
-const BRIDGE_KEY = '__DSH_SIDEBAR_AGENT_BRIDGE__';
 const EMPTY_OPEN_TABS = [];
+const SELECTION_MAX_CHARS = 4000;
 
 const CSS = `
 .dsh-sa-root{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
@@ -102,6 +102,12 @@ const CSS = `
 .dsh-sa-quote-loading{padding:2px 7px 6px;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary)}
 .dsh-sa-quote-divider{display:flex;align-items:center;gap:6px;padding:4px 4px 5px;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary)}
 .dsh-sa-quote-divider::before,.dsh-sa-quote-divider::after{content:'';height:1px;flex:1 1 auto;background:var(--dsw-alias-border-l2)}
+.dsh-sa-sel-toolbar{position:fixed;z-index:1200;display:flex;align-items:center;gap:2px;padding:4px;border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-2);box-shadow:var(--dsw-elevation-panel);backdrop-filter:var(--dsw-menu-backdrop-filter);transform:translateX(-50%);font-family:var(--dsw-font-family)}
+.dsh-sa-sel-btn{border:0;background:0 0;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:20px;padding:2px 8px;border-radius:var(--dsw-radius-sm);cursor:pointer;white-space:nowrap}
+.dsh-sa-sel-btn:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsh-sa-sel-btn-primary{color:var(--dsw-alias-state-business-primary);font-weight:500}
+.dsh-sa-sel-sep{width:.5px;height:16px;background:var(--dsw-alias-border-l2);margin:0 2px}
+.dsh-sa-sel-toast{position:fixed;z-index:1201;left:50%;bottom:24px;transform:translateX(-50%);padding:6px 10px;border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-2);box-shadow:var(--dsw-elevation-panel);color:var(--dsw-alias-label-primary);font-size:12px;line-height:18px;white-space:normal;max-width:min(560px,80vw);text-align:center}
 @media (max-width:560px){
   .dsh-sa-pane-bar{padding-left:6px;padding-right:6px}
   .dsh-sa-quote-btn,.dsh-sa-history-btn{padding:1px 5px}
@@ -173,6 +179,18 @@ const zh = {
   selectionSource: '引用来源',
   selectionFollowup: '我的追问：',
   selectionCreatePending: '侧边栏正在创建，请稍后再试',
+  selectCopy: '复制',
+  selectQuote: '引用',
+  selectAsk: '在侧边栏提问',
+  selectToolbar: '选中文字操作',
+  selectCopied: '已复制',
+  selectCopyFailed: '复制失败，请检查浏览器剪贴板权限',
+  selectInserted: '已插入输入框',
+  selectInsertFailed: '输入框内容已变化，请重试',
+  selectAskFailed: '侧边栏插入失败',
+  selectCreated: '已新建侧边栏，选区已放入草稿',
+  selectAppended: '选区已追加到侧边栏草稿',
+  selectCancelled: '已取消新增侧边栏，选区仍在',
 };
 
 function storageGet(key) {
@@ -936,6 +954,112 @@ function buildMainSummaryBlock(context) {
   return clipText(lines.join('\n'), 36000);
 }
 
+/**
+ * Selection toolbar: the input affordance and the sidebar are one plugin now.
+ * The parser deliberately reads the same DOM anchors as the conversation UI,
+ * but rejects selections made inside any composer or any sidebar Agent so a
+ * child conversation can never quote itself (or react to a main selection).
+ */
+function normalizeSelectionText(text) {
+  return String(text ?? '')
+    .replace(/\u200B/g, '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+}
+
+function selectionElementOf(node) {
+  if (!node) return null;
+  return node.nodeType === 1 ? node : node.parentElement ?? null;
+}
+
+function readMainSelection(scopeSessionId) {
+  if (typeof window === 'undefined') return null;
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  if (range.collapsed) return null;
+  const startElement = selectionElementOf(range.startContainer);
+  const endElement = selectionElementOf(range.endContainer);
+  if (!startElement || !endElement) return null;
+  const excluded = '[data-sidebar-right-panel], [data-sidebar-agent], [data-composer-card], textarea, input, [contenteditable="true"]';
+  if (startElement.closest(excluded) || endElement.closest(excluded)) return null;
+  const startNode = startElement.closest('[data-chat-flow-kind]');
+  const endNode = endElement.closest('[data-chat-flow-kind]');
+  if (!startNode || !endNode || startNode !== endNode) return null;
+  if (!startNode.closest('[data-conversation-region="chat"]')) return null;
+  const selectionSessionId = startNode.closest('[data-conversation-session]')?.getAttribute('data-conversation-session') ?? '';
+  if (scopeSessionId && selectionSessionId && selectionSessionId !== scopeSessionId) return null;
+  const flowKind = startNode.getAttribute('data-chat-flow-kind');
+  const role = flowKind === 'assistant-step' ? 'assistant' : flowKind;
+  if (role !== 'user' && role !== 'assistant' && role !== 'steering') return null;
+  const raw = normalizeSelectionText(selection.toString());
+  if (raw.length === 0) return null;
+  const truncated = raw.length > SELECTION_MAX_CHARS;
+  const text = truncated ? raw.slice(0, SELECTION_MAX_CHARS) : raw;
+  const rect = range.getBoundingClientRect();
+  if (!rect || (rect.width === 0 && rect.height === 0)) return null;
+  const turn = Number(startNode.getAttribute('data-chat-turn') ?? startNode.closest('[data-chat-turn]')?.getAttribute('data-chat-turn'));
+  const nodeKey = startNode.getAttribute('data-chat-node-key') ?? startNode.closest('[data-chat-node-key]')?.getAttribute('data-chat-node-key') ?? '';
+  return {
+    version: 1,
+    surface: 'chat',
+    role,
+    nodeKey,
+    turn: Number.isFinite(turn) ? turn : 0,
+    text,
+    charCount: text.length,
+    truncated,
+    capturedAt: Date.now(),
+    sessionId: selectionSessionId || scopeSessionId || undefined,
+    rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
+  };
+}
+
+function formatMainQuote(selection) {
+  const lines = String(selection.text ?? '').split('\n').map((line) => `> ${line}`);
+  if (lines.length > 40) {
+    lines.length = 40;
+    lines.push('> …');
+  }
+  const suffix = selection.truncated === true ? ` · ${zh.selectionTruncated}` : '';
+  const turn = Number(selection.turn) || 0;
+  const origin = `${selectionRoleLabel(selection.role)}${turn > 0 ? ` · 第 ${turn} 轮` : ''}`;
+  return `${lines.join('\n')}\n>\n> — ${origin}${suffix}\n\n`;
+}
+
+function selectionCopyText(text) {
+  // Run the synchronous path first so a real click still has user activation.
+  // The async Clipboard API is only a fallback for browsers that have removed
+  // `execCommand('copy')`.
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.top = '-1000px';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  } finally {
+    area.remove();
+  }
+  if (ok) return Promise.resolve();
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+  return Promise.reject(new Error('clipboard unavailable'));
+}
+
+function clearNativeSelection() {
+  try {
+    window.getSelection()?.removeAllRanges();
+  } catch {
+    // Selection cleanup is best effort.
+  }
+}
+
 function selectionRoleLabel(role) {
   if (role === 'user') return zh.selectionFromUser;
   if (role === 'steering') return zh.selectionFromSteering;
@@ -1380,6 +1504,185 @@ function SidebarAgentPaneActions({ parentId }) {
   );
 }
 
+/**
+ * The merged selection toolbar. It lives in the normal conversation composer
+ * dock only so it can use that conversation's InputActions; it renders nothing
+ * until the user selects text, so it does not add a visible composer row.
+ */
+function SidebarAgentSelectionToolbar({ inputActions, sessionId }) {
+  const list = useSessionList();
+  const [selection, setSelection] = React.useState(null);
+  const [toast, setToast] = React.useState(null);
+  const toolbarRef = React.useRef(null);
+  const rafRef = React.useRef(0);
+  const toastTimer = React.useRef(0);
+  const embedded = typeof sessionId === 'string' && parentOf(sessionId) !== undefined;
+  const cwd = list.byId[sessionId]?.cwd;
+  const preset = list.projectionsBySession?.[sessionId]?.values?.agentPreset;
+
+  const showToast = (text) => {
+    setToast(text);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 2200);
+  };
+
+  React.useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+
+  React.useEffect(() => {
+    if (typeof sessionId !== 'string' || embedded) {
+      setSelection(null);
+      return undefined;
+    }
+    const schedule = () => {
+      window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = window.requestAnimationFrame(() => {
+        const next = readMainSelection(sessionId);
+        setSelection((previous) => {
+          if (next === null) return null;
+          if (
+            previous
+            && previous.text === next.text
+            && previous.nodeKey === next.nodeKey
+            && Math.abs(previous.rect.top - next.rect.top) < 2
+            && Math.abs(previous.rect.left - next.rect.left) < 2
+          ) {
+            return previous;
+          }
+          return next;
+        });
+      });
+    };
+    const onSelectionChange = () => schedule();
+    const onPointerUp = (event) => {
+      if (event.button !== 0) return;
+      if (toolbarRef.current?.contains(event.target)) return;
+      schedule();
+    };
+    const onPointerDown = (event) => {
+      if (event.button !== 0) return;
+      if (toolbarRef.current?.contains(event.target)) return;
+      setSelection(null);
+    };
+    const onScroll = () => setSelection(null);
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setSelection(null);
+    };
+    document.addEventListener('selectionchange', onSelectionChange);
+    document.addEventListener('pointerup', onPointerUp, true);
+    document.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      window.cancelAnimationFrame(rafRef.current);
+      document.removeEventListener('selectionchange', onSelectionChange);
+      document.removeEventListener('pointerup', onPointerUp, true);
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+      document.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [sessionId, embedded]);
+
+  const insertQuote = () => {
+    if (!selection || !inputActions) return;
+    try {
+      const block = formatMainQuote(selection);
+      let span = inputActions.captureInsertion();
+      let ok = inputActions.insertText(block, span);
+      if (!ok) {
+        span = inputActions.captureInsertion();
+        ok = inputActions.insertText(block, span);
+      }
+      showToast(ok ? zh.selectInserted : zh.selectInsertFailed);
+      if (ok) {
+        setSelection(null);
+        clearNativeSelection();
+      }
+    } catch {
+      showToast(zh.selectInsertFailed);
+    }
+  };
+
+  const copy = () => {
+    if (!selection) return;
+    selectionCopyText(selection.text)
+      .then(() => {
+        showToast(zh.selectCopied);
+        clearNativeSelection();
+      })
+      .catch(() => showToast(zh.selectCopyFailed));
+  };
+
+  const ask = async () => {
+    if (!selection) return;
+    const payload = {
+      version: 1,
+      surface: selection.surface,
+      role: selection.role,
+      nodeKey: selection.nodeKey,
+      turn: selection.turn,
+      text: selection.text,
+      charCount: selection.charCount,
+      truncated: selection.truncated,
+      capturedAt: selection.capturedAt,
+      sessionId: selection.sessionId ?? sessionId,
+    };
+    try {
+      const result = await quoteSelectionToSidebar(sessionId, { cwd, preset }, payload);
+      if (result?.cancelled === true) {
+        showToast(zh.selectCancelled);
+        return;
+      }
+      setSelection(null);
+      clearNativeSelection();
+      showToast(result?.created === true ? zh.selectCreated : zh.selectAppended);
+    } catch (cause) {
+      console.error('[sidebar-agent] selection ask failed', cause);
+      showToast(`${zh.selectAskFailed}: ${cause?.message ?? 'unknown'}`);
+    }
+  };
+
+  if (embedded) return null;
+  if (!selection) {
+    return toast === null
+      ? null
+      : React.createElement('div', { className: 'dsh-sa-sel-toast', role: 'status' }, toast);
+  }
+
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const above = selection.rect.bottom + 52 > viewportHeight;
+  const left = Math.max(120, Math.min(viewportWidth - 120, selection.rect.left + selection.rect.width / 2));
+  const top = above ? Math.max(8, selection.rect.top - 44) : selection.rect.bottom + 8;
+
+  return React.createElement(
+    React.Fragment,
+    null,
+    React.createElement(
+      'div',
+      {
+        ref: toolbarRef,
+        className: 'dsh-sa-sel-toolbar',
+        style: { left, top },
+        role: 'toolbar',
+        'aria-label': zh.selectToolbar,
+        'data-sidebar-agent-selection': '',
+        onMouseDown: (event) => event.preventDefault(),
+      },
+      React.createElement('button', { type: 'button', className: 'dsh-sa-sel-btn', onClick: copy }, zh.selectCopy),
+      React.createElement('span', { className: 'dsh-sa-sel-sep' }),
+      React.createElement('button', { type: 'button', className: 'dsh-sa-sel-btn', onClick: insertQuote }, zh.selectQuote),
+      React.createElement(
+        'button',
+        { type: 'button', className: 'dsh-sa-sel-btn dsh-sa-sel-btn-primary', onClick: () => void ask() },
+        zh.selectAsk,
+      ),
+    ),
+    toast ? React.createElement('div', { className: 'dsh-sa-sel-toast', role: 'status' }, toast) : null,
+  );
+}
+
 function SidebarAgentTab({ useTabInfo, SessionProvider, renderSlot }) {
   const { tab } = useTabInfo();
   const record = tabRecord(tab);
@@ -1698,25 +2001,6 @@ function SidebarAgentCreateAction({ sessionId }) {
   const [creating, setCreating] = React.useState(false);
   const hidden = origin === 'subagent' || parentOf(sessionId) !== undefined;
 
-  // The bridge lives on the always-mounted header entry, not in the old
-  // composer dock: ask-selection must keep working before a sidebar exists.
-  React.useEffect(() => {
-    if (typeof window === 'undefined' || hidden) return undefined;
-    const api = {
-      version: 1,
-      quoteSelection: async (payload) => {
-        if (typeof payload?.sessionId === 'string' && payload.sessionId !== sessionId) {
-          throw new Error('选区不属于当前主会话');
-        }
-        return quoteSelectionToSidebar(sessionId, { cwd, preset }, payload ?? {});
-      },
-    };
-    window[BRIDGE_KEY] = api;
-    return () => {
-      if (window[BRIDGE_KEY] === api) delete window[BRIDGE_KEY];
-    };
-  }, [sessionId, hidden, cwd, preset]);
-
   if (hidden) return null;
 
   const hasOpenTab = openTabs.some((tab) => tab.sessionId === sessionId && tab.kind === KIND);
@@ -1845,6 +2129,15 @@ window.__ModuleLoader__.load({
         id: 'sidebar-agent-create',
         order: 15,
       }, SidebarAgentCreateAction)), 'sidebar-agent: header action');
+
+      // The slot is only a session-scoped source of InputActions for the
+      // floating toolbar. It renders null until text is selected, so the main
+      // composer stays a single row; the toolbar itself is position: fixed.
+      context.effect(() => context.slots.inject('conversation.composer.dock', () => context.slots.register({
+        name: 'conversation.composer.dock',
+        id: 'sidebar-agent-selection',
+        order: 20,
+      }, SidebarAgentSelectionToolbar)), 'sidebar-agent: selection toolbar');
     }
 
     return {

@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Sidebar Agent",
-    "description": "Create independent sidebar agents under a main session with the full composer and automatic main-session context, without posting into the main conversation."
+    "description": "Create independent sidebar agents under a main session with the full composer and automatic main-session context, plus built-in copy, quote, and ask-in-sidebar actions for selected main-conversation text, without posting into the main conversation."
   }
 }
