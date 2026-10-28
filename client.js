@@ -29,26 +29,18 @@ const CHILD_PREFIX = 'dsh.sidebar-agent.child.v1:';
 const TAB_PREFIX = 'dsh.sidebar-agent.tab.v1:';
 const STYLE_ATTR = 'data-dsh-sidebar-agent-style';
 const BRIDGE_KEY = '__DSH_SIDEBAR_AGENT_BRIDGE__';
+const EMPTY_OPEN_TABS = [];
 
 const CSS = `
 .dsh-sa-root{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .dsh-sa-root>*{min-height:0;flex:1 1 auto}
 .dsh-sa-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-[data-composer-dock]:has([data-sidebar-agent-dock]){flex-wrap:wrap;row-gap:2px}
-.dsh-sa-dock{box-sizing:border-box;flex:1 0 100%;width:100%;min-width:0;display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;gap:8px;padding:2px 2px 0;overflow:visible}
-.dsh-sa-chipstrip{display:flex;align-items:center;gap:4px;min-width:0;flex:0 1 auto;overflow-x:auto;overflow-y:hidden;padding:1px 0;scrollbar-width:none}
-.dsh-sa-chipstrip::-webkit-scrollbar{display:none}
-.dsh-sa-chipstrip>*{flex:none}
-.dsh-sa-dock-actions{display:inline-flex;align-items:center;gap:4px;flex:none;margin-left:auto}
-.dsh-sa-chip,.dsh-sa-btn{box-sizing:border-box;border:0;background:0 0;font:inherit;color:var(--dsw-alias-label-tertiary);cursor:pointer;border-radius:var(--dsw-radius-sm);white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
-.dsh-sa-chip{max-width:168px;display:inline-flex;align-items:center;padding:0 1px 0 0;border:1px solid var(--dsw-alias-border-l2);font-size:11px;line-height:18px;background:var(--dsw-alias-bg-layer-1)}
-.dsh-sa-chip-label{box-sizing:border-box;min-width:0;max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;background:0 0;font:inherit;color:inherit;font-size:11px;line-height:18px;padding:2px 3px 2px 8px;cursor:pointer}
+.dsh-sa-pane-bar{box-sizing:border-box;display:flex;align-items:center;justify-content:flex-end;gap:4px;min-height:27px;padding:4px 8px;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
+.dsh-sa-root>.dsh-sa-pane-bar{flex:0 0 auto}
+.dsh-sa-btn{box-sizing:border-box;border:0;background:0 0;font:inherit;color:var(--dsw-alias-label-tertiary);cursor:pointer;border-radius:var(--dsw-radius-sm);white-space:nowrap;display:inline-flex;align-items:center;padding:3px 6px;font-size:12px;line-height:18px;gap:3px}
 .dsh-sa-quote-short{display:none}
 .dsh-sa-history-text{display:inline}
-.dsh-sa-chip-remove{box-sizing:border-box;flex:none;width:17px;height:17px;display:inline-flex;align-items:center;justify-content:center;border:0;background:0 0;font:inherit;color:inherit;font-size:12px;line-height:1;padding:0;cursor:pointer;border-radius:3px;opacity:.45}
-.dsh-sa-chip-remove:hover{opacity:1;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsh-sa-chip:hover,.dsh-sa-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsh-sa-btn{padding:3px 6px;font-size:12px;line-height:18px;gap:3px}
+.dsh-sa-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsh-sa-btn:disabled{opacity:.45;cursor:default}
 .dsh-sa-notice{height:100%;display:flex;align-items:center;justify-content:center;padding:24px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;text-align:center}
 .dsh-sa-error{color:var(--dsw-alias-state-error-primary)}
@@ -60,6 +52,7 @@ const CSS = `
 .dsh-sa-history-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsh-sa-history-pop{position:absolute;bottom:calc(100% + 6px);right:0;z-index:80;box-sizing:border-box;width:270px;max-height:320px;overflow:auto;padding:4px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2);box-shadow:0 10px 28px rgba(0,0,0,.22),0 1px 3px rgba(0,0,0,.12);isolation:isolate}
 .dsh-sa-history-pop-left{left:0;right:auto}
+.dsh-sa-history-pop-down{top:calc(100% + 6px);bottom:auto}
 .dsh-sa-history-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:5px 7px 4px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);font-weight:600}
 .dsh-sa-history-count{font-weight:400;color:var(--dsw-alias-label-tertiary)}
 .dsh-sa-history-empty{padding:8px 7px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}
@@ -82,6 +75,7 @@ const CSS = `
 .dsh-sa-quote-btn{box-sizing:border-box;display:inline-flex;align-items:center;gap:3px;border:1px solid var(--dsw-alias-border-l2);background:0 0;font:inherit;color:var(--dsw-alias-label-tertiary);border-radius:999px;padding:1px 7px;font-size:11px;line-height:16px;cursor:pointer;white-space:nowrap}
 .dsh-sa-quote-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsh-sa-quote-pop{position:absolute;bottom:calc(100% + 6px);right:0;z-index:81;box-sizing:border-box;width:min(320px,calc(100vw - 24px));max-height:min(420px,calc(100vh - 120px));overflow:auto;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2);box-shadow:0 10px 28px rgba(0,0,0,.22),0 1px 3px rgba(0,0,0,.12);isolation:isolate}
+.dsh-sa-quote-pop-down{top:calc(100% + 6px);bottom:auto}
 .dsh-sa-quote-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:4px 4px 4px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);font-weight:600}
 .dsh-sa-quote-purpose{padding:0 4px 7px;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary)}
 .dsh-sa-quote-count{font-weight:400;color:var(--dsw-alias-label-tertiary)}
@@ -109,9 +103,7 @@ const CSS = `
 .dsh-sa-quote-divider{display:flex;align-items:center;gap:6px;padding:4px 4px 5px;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary)}
 .dsh-sa-quote-divider::before,.dsh-sa-quote-divider::after{content:'';height:1px;flex:1 1 auto;background:var(--dsw-alias-border-l2)}
 @media (max-width:560px){
-  .dsh-sa-dock{gap:4px;padding-top:2px}
-  .dsh-sa-chip{max-width:112px}
-  .dsh-sa-chip-label{max-width:84px;padding-left:6px}
+  .dsh-sa-pane-bar{padding-left:6px;padding-right:6px}
   .dsh-sa-quote-btn,.dsh-sa-history-btn{padding:1px 5px}
   .dsh-sa-quote-long{display:none}
   .dsh-sa-quote-short{display:inline}
@@ -273,29 +265,6 @@ function removeTabMaps(childId) {
   }
 }
 
-/**
- * Close the tab but keep the child Session and a history row. The chip `x`
- * must never destroy a conversation: a closed entry can be restored from the
- * sidebar history popover.
- */
-function closeThread(parentId, thread) {
-  const right = ctx.sidebarRight;
-  const tabs = typeof right?.tabsIn === 'function' ? right.tabsIn(parentId) : [];
-  const doomed = tabs.filter(
-    (tab) => tab.kind === KIND
-      && (tab.navigation?.params?.childId === thread.id || readTab(tab.contentId)?.childId === thread.id),
-  );
-  updateThread(parentId, thread.id, { hidden: true, closedAt: new Date().toISOString() });
-  for (const tab of doomed) {
-    try {
-      right?.closeIn?.(parentId, tab.id);
-    } catch (error) {
-      console.error('[sidebar-agent] could not close hidden tab', error);
-    }
-  }
-  removeTabMaps(thread.id);
-}
-
 function restoreThread(parentId, thread) {
   const updated = updateThread(parentId, thread.id, { hidden: false });
   openThread(parentId, updated ?? thread);
@@ -392,6 +361,41 @@ function useSessionList() {
     (listener) => store.subscribe(listener),
     () => store.getSnapshot(),
   );
+}
+
+/** The localStorage history rows for one main Session, kept in sync. */
+function useThreadList(parentId) {
+  const [threads, setThreads] = React.useState(() => readThreads(parentId));
+
+  React.useEffect(() => {
+    const sync = () => setThreads(readThreads(parentId));
+    sync();
+    const unsubscribe = subscribeThreads(sync);
+    const onStorage = (event) => {
+      if (event.key === null || event.key === THREADS_PREFIX + parentId) sync();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [parentId]);
+
+  return threads;
+}
+
+/** Open tab membership across Sessions, used to avoid a duplicate history entry. */
+function useOpenSidebarTabs() {
+  const source = ctx.sidebarRight?.openTabs;
+  const subscribe = React.useCallback(
+    (listener) => (typeof source?.subscribe === 'function' ? source.subscribe(listener) : () => {}),
+    [source],
+  );
+  const getSnapshot = React.useCallback(
+    () => (typeof source?.getSnapshot === 'function' ? source.getSnapshot() : EMPTY_OPEN_TABS),
+    [source],
+  );
+  return React.useSyncExternalStore(subscribe, getSnapshot);
 }
 
 function matchesThread(tab, thread) {
@@ -1050,7 +1054,7 @@ async function resolveQuoteThread(parentId, parent, targetId, threads) {
   return thread;
 }
 
-function SidebarAgentQuote({ parentId, threads, cwd, preset }) {
+function SidebarAgentQuote({ parentId, threads, cwd, preset, direction = 'up' }) {
   const list = useSessionList();
   const [open, setOpen] = React.useState(false);
   const [questions, setQuestions] = React.useState([]);
@@ -1081,14 +1085,20 @@ function SidebarAgentQuote({ parentId, threads, cwd, preset }) {
       const railGuard = mainChatRootFor(parentId)?.getBoundingClientRect().left ?? margin;
       const anchorLeft = rect.right - width;
       const left = Math.min(Math.max(anchorLeft, railGuard + 4), maxLeft);
-      const bottom = Math.max(margin, window.innerHeight - rect.top + 6);
-      const maxHeight = Math.max(160, Math.min(420, rect.top - margin));
-      setPopStyle({ position: 'fixed', left, bottom, right: 'auto', width, maxHeight, zIndex: 83 });
+      if (direction === 'down') {
+        const top = Math.max(margin, rect.bottom + 6);
+        const maxHeight = Math.max(160, Math.min(420, window.innerHeight - top - margin));
+        setPopStyle({ position: 'fixed', left, top, right: 'auto', bottom: 'auto', width, maxHeight, zIndex: 83 });
+      } else {
+        const bottom = Math.max(margin, window.innerHeight - rect.top + 6);
+        const maxHeight = Math.max(160, Math.min(420, rect.top - margin));
+        setPopStyle({ position: 'fixed', left, bottom, right: 'auto', top: 'auto', width, maxHeight, zIndex: 83 });
+      }
     };
     update();
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
-  }, [open]);
+  }, [open, direction, parentId]);
 
   React.useEffect(() => {
     if (!open) return undefined;
@@ -1225,7 +1235,7 @@ function SidebarAgentQuote({ parentId, threads, cwd, preset }) {
       React.createElement('span', { className: 'dsh-sa-quote-short' }, zh.quoteShort),
     ),
     open ? React.createElement('div', {
-      className: 'dsh-sa-quote-pop',
+      className: `dsh-sa-quote-pop${direction === 'down' ? ' dsh-sa-quote-pop-down' : ''}`,
       role: 'dialog',
       'aria-label': zh.quoteHeader,
       'data-sidebar-agent-quote-pop': '',
@@ -1344,10 +1354,37 @@ function SidebarAgentTitle({ useTabInfo }) {
   );
 }
 
+function SidebarAgentPaneActions({ parentId }) {
+  const list = useSessionList();
+  const threads = useThreadList(parentId);
+  const cwd = list.byId[parentId]?.cwd;
+  const preset = list.projectionsBySession?.[parentId]?.values?.agentPreset;
+
+  if (threads.length === 0) return null;
+  return React.createElement(
+    'div',
+    { className: 'dsh-sa-pane-bar', 'data-sidebar-agent-pane-actions': '' },
+    React.createElement(SidebarAgentHistory, {
+      parentId,
+      fixed: true,
+      direction: 'down',
+      align: 'right',
+    }),
+    React.createElement(SidebarAgentQuote, {
+      parentId,
+      threads,
+      cwd,
+      preset,
+      direction: 'down',
+    }),
+  );
+}
+
 function SidebarAgentTab({ useTabInfo, SessionProvider, renderSlot }) {
   const { tab } = useTabInfo();
   const record = tabRecord(tab);
   const childId = record?.childId;
+  const parentId = record?.parentId;
   const list = useSessionList();
   const rootRef = React.useRef(null);
 
@@ -1422,6 +1459,9 @@ function SidebarAgentTab({ useTabInfo, SessionProvider, renderSlot }) {
   return React.createElement(
     'div',
     { ref: rootRef, className: 'dsh-sa-root', 'data-sidebar-agent': childId },
+    parentId !== undefined
+      ? React.createElement(SidebarAgentPaneActions, { parentId })
+      : null,
     blank
       ? React.createElement(
         'div',
@@ -1438,36 +1478,7 @@ function SidebarAgentTab({ useTabInfo, SessionProvider, renderSlot }) {
   );
 }
 
-function SidebarAgentChip({ thread, parentId }) {
-  const list = useSessionList();
-  const title = list.byId[thread.id]?.title;
-  const fallback = typeof thread.label === 'string' && thread.label.length > 0 ? thread.label : zh.fallbackChip;
-  // The sidebar label is the stable identity; the child's auto title changes
-  // after its first turn, so keep the chip pinned to the label.
-  const label = fallback;
-  const tooltip = typeof title === 'string' && title.length > 0 ? `${label} · ${title}` : label;
-  return React.createElement(
-    'span',
-    { className: 'dsh-sa-chip', title: tooltip },
-    React.createElement('button', {
-      type: 'button',
-      className: 'dsh-sa-chip-label',
-      onClick: () => openThread(parentId, thread),
-    }, label),
-    React.createElement('button', {
-      type: 'button',
-      className: 'dsh-sa-chip-remove',
-      title: zh.closeTitle,
-      'aria-label': zh.closeTitle,
-      onClick: (event) => {
-        event.stopPropagation();
-        closeThread(parentId, thread);
-      },
-    }, '×'),
-  );
-}
-
-function SidebarAgentHistory({ parentId, resolveParentId, compact = false, align = 'right', hideWhenEmpty = false, fixed = false }) {
+function SidebarAgentHistory({ parentId, resolveParentId, compact = false, align = 'right', hideWhenEmpty = false, fixed = false, direction = 'up' }) {
   const list = useSessionList();
   const [open, setOpen] = React.useState(false);
   const [confirmId, setConfirmId] = React.useState(null);
@@ -1490,9 +1501,15 @@ function SidebarAgentHistory({ parentId, resolveParentId, compact = false, align
       const width = Math.min(270, window.innerWidth - margin * 2);
       const preferred = align === 'left' ? rect.right + 6 : rect.left;
       const left = Math.max(margin, Math.min(preferred, window.innerWidth - width - margin));
-      const bottom = Math.max(margin, window.innerHeight - rect.top + 6);
-      const maxHeight = Math.max(140, Math.min(360, rect.top - 12));
-      setFixedStyle({ position: 'fixed', left, bottom, right: 'auto', width, maxHeight, zIndex: 82 });
+      if (direction === 'down') {
+        const top = Math.max(margin, rect.bottom + 6);
+        const maxHeight = Math.max(140, Math.min(360, window.innerHeight - top - margin));
+        setFixedStyle({ position: 'fixed', left, top, right: 'auto', bottom: 'auto', width, maxHeight, zIndex: 82 });
+      } else {
+        const bottom = Math.max(margin, window.innerHeight - rect.top + 6);
+        const maxHeight = Math.max(140, Math.min(360, rect.top - 12));
+        setFixedStyle({ position: 'fixed', left, bottom, right: 'auto', top: 'auto', width, maxHeight, zIndex: 82 });
+      }
     };
     update();
     window.addEventListener('resize', update);
@@ -1501,7 +1518,7 @@ function SidebarAgentHistory({ parentId, resolveParentId, compact = false, align
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
     };
-  }, [open, fixed, align, threads.length]);
+  }, [open, fixed, align, direction, threads.length]);
 
   React.useEffect(() => {
     setResolvedParent(parentId);
@@ -1657,7 +1674,7 @@ function SidebarAgentHistory({ parentId, resolveParentId, compact = false, align
       compact ? null : React.createElement('span', { className: 'dsh-sa-history-text' }, zh.history),
     ),
     open ? React.createElement('div', {
-      className: `dsh-sa-history-pop${align === 'left' ? ' dsh-sa-history-pop-left' : ''}`,
+      className: `dsh-sa-history-pop${align === 'left' ? ' dsh-sa-history-pop-left' : ''}${direction === 'down' ? ' dsh-sa-history-pop-down' : ''}`,
       role: 'menu',
       'data-sidebar-agent-history-pop': '',
       style: fixedStyle ?? undefined,
@@ -1671,29 +1688,20 @@ function SidebarAgentHistory({ parentId, resolveParentId, compact = false, align
   );
 }
 
-function SidebarAgentDock({ sessionId }) {
+function SidebarAgentCreateAction({ sessionId }) {
   const list = useSessionList();
   const origin = list.byId[sessionId]?.origin;
   const cwd = list.byId[sessionId]?.cwd;
   const preset = list.projectionsBySession?.[sessionId]?.values?.agentPreset;
-  const [threads, setThreads] = React.useState(() => readThreads(sessionId));
+  const threads = useThreadList(sessionId);
+  const openTabs = useOpenSidebarTabs();
+  const [creating, setCreating] = React.useState(false);
+  const hidden = origin === 'subagent' || parentOf(sessionId) !== undefined;
 
+  // The bridge lives on the always-mounted header entry, not in the old
+  // composer dock: ask-selection must keep working before a sidebar exists.
   React.useEffect(() => {
-    setThreads(readThreads(sessionId));
-    const unsubscribe = subscribeThreads(() => setThreads(readThreads(sessionId)));
-    const onStorage = (event) => {
-      if (event.key === null || event.key === THREADS_PREFIX + sessionId) setThreads(readThreads(sessionId));
-    };
-    window.addEventListener('storage', onStorage);
-    return () => {
-      unsubscribe();
-      window.removeEventListener('storage', onStorage);
-    };
-  }, [sessionId]);
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-    if (origin === 'subagent' || parentOf(sessionId) !== undefined) return undefined;
+    if (typeof window === 'undefined' || hidden) return undefined;
     const api = {
       version: 1,
       quoteSelection: async (payload) => {
@@ -1707,43 +1715,11 @@ function SidebarAgentDock({ sessionId }) {
     return () => {
       if (window[BRIDGE_KEY] === api) delete window[BRIDGE_KEY];
     };
-  }, [sessionId, origin, cwd, preset]);
+  }, [sessionId, hidden, cwd, preset]);
 
-  if (origin === 'subagent' || parentOf(sessionId) !== undefined) return null;
+  if (hidden) return null;
 
-  const visibleThreads = threads.filter((thread) => thread.hidden !== true);
-  if (threads.length === 0) return null;
-
-  return React.createElement(
-    'div',
-    { className: 'dsh-sa-dock', 'data-sidebar-agent-dock': '' },
-    visibleThreads.length > 0 ? React.createElement('div', { className: 'dsh-sa-chipstrip' },
-      ...visibleThreads.map((thread) => React.createElement(SidebarAgentChip, {
-        key: thread.id,
-        thread,
-        parentId: sessionId,
-      })),
-    ) : null,
-    React.createElement('div', { className: 'dsh-sa-dock-actions' },
-      React.createElement(SidebarAgentHistory, { parentId: sessionId }),
-      visibleThreads.length > 0 ? React.createElement(SidebarAgentQuote, {
-        parentId: sessionId,
-        threads,
-        cwd,
-        preset,
-      }) : null,
-    ),
-  );
-}
-
-function SidebarAgentCreateAction({ sessionId }) {
-  const list = useSessionList();
-  const origin = list.byId[sessionId]?.origin;
-  const cwd = list.byId[sessionId]?.cwd;
-  const preset = list.projectionsBySession?.[sessionId]?.values?.agentPreset;
-  const [creating, setCreating] = React.useState(false);
-
-  if (origin === 'subagent' || parentOf(sessionId) !== undefined) return null;
+  const hasOpenTab = openTabs.some((tab) => tab.sessionId === sessionId && tab.kind === KIND);
 
   const create = async () => {
     if (creating) return;
@@ -1758,17 +1734,29 @@ function SidebarAgentCreateAction({ sessionId }) {
   };
 
   return React.createElement(
-    'button',
-    {
-      type: 'button',
-      className: 'dsh-sa-btn',
-      title: zh.createTitle,
-      disabled: creating,
-      onClick: create,
-      'data-sidebar-agent-create': '',
-    },
-    React.createElement('span', { 'aria-hidden': 'true' }, '+'),
-    zh.create,
+    React.Fragment,
+    null,
+    !hasOpenTab && threads.length > 0
+      ? React.createElement(SidebarAgentHistory, {
+          parentId: sessionId,
+          fixed: true,
+          direction: 'down',
+          align: 'right',
+        })
+      : null,
+    React.createElement(
+      'button',
+      {
+        type: 'button',
+        className: 'dsh-sa-btn',
+        title: zh.createTitle,
+        disabled: creating,
+        onClick: create,
+        'data-sidebar-agent-create': '',
+      },
+      React.createElement('span', { 'aria-hidden': 'true' }, '+'),
+      zh.create,
+    ),
   );
 }
 
@@ -1841,11 +1829,16 @@ window.__ModuleLoader__.load({
         name: 'sidebar.agent.conversation',
       }, SidebarAgentConversation)), 'sidebar-agent: conversation');
 
-      context.effect(() => context.slots.inject('conversation.composer.dock', () => context.slots.register({
-        name: 'conversation.composer.dock',
-        id: 'sidebar-agent-threads',
-        order: 20,
-      }, SidebarAgentDock)), 'sidebar-agent: conversation dock');
+      context.effect(() => {
+        const right = context.sidebarRight;
+        if (typeof right?.registerCloseHandler !== 'function') return undefined;
+        return right.registerCloseHandler(KIND, (parentId, tab) => {
+          const childId = childIdForTab(tab);
+          if (childId === undefined) return;
+          updateThread(parentId, childId, { hidden: true, closedAt: new Date().toISOString() });
+          removeTabMaps(childId);
+        });
+      }, 'sidebar-agent: tab close history');
 
       context.effect(() => context.slots.inject('conversation.session.header.actions', () => context.slots.register({
         name: 'conversation.session.header.actions',
