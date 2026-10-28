@@ -35,33 +35,26 @@ const CSS = `
 .dsh-sa-root>*{min-height:0;flex:1 1 auto}
 .dsh-sa-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 [data-composer-dock]:has([data-sidebar-agent-dock]){flex-wrap:wrap;row-gap:2px}
-.dsh-sa-dock{box-sizing:border-box;flex:1 0 100%;width:100%;min-width:0;display:flex;align-items:center;justify-content:flex-end;flex-wrap:nowrap;gap:6px;padding:4px 2px 0;overflow:visible}
-.dsh-sa-dock-label{flex:none;font-size:11px;line-height:18px;color:var(--dsw-alias-label-tertiary);opacity:.8}
+.dsh-sa-dock{box-sizing:border-box;flex:1 0 100%;width:100%;min-width:0;display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;gap:8px;padding:2px 2px 0;overflow:visible}
 .dsh-sa-chipstrip{display:flex;align-items:center;gap:4px;min-width:0;flex:0 1 auto;overflow-x:auto;overflow-y:hidden;padding:1px 0;scrollbar-width:none}
 .dsh-sa-chipstrip::-webkit-scrollbar{display:none}
 .dsh-sa-chipstrip>*{flex:none}
 .dsh-sa-dock-actions{display:inline-flex;align-items:center;gap:4px;flex:none;margin-left:auto}
-.dsh-sa-chip,.dsh-sa-add,.dsh-sa-btn{box-sizing:border-box;border:0;background:0 0;font:inherit;color:var(--dsw-alias-label-tertiary);cursor:pointer;border-radius:var(--dsw-radius-sm);white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+.dsh-sa-chip,.dsh-sa-btn{box-sizing:border-box;border:0;background:0 0;font:inherit;color:var(--dsw-alias-label-tertiary);cursor:pointer;border-radius:var(--dsw-radius-sm);white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
 .dsh-sa-chip{max-width:168px;display:inline-flex;align-items:center;padding:0 1px 0 0;border:1px solid var(--dsw-alias-border-l2);font-size:11px;line-height:18px;background:var(--dsw-alias-bg-layer-1)}
 .dsh-sa-chip-label{box-sizing:border-box;min-width:0;max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:0;background:0 0;font:inherit;color:inherit;font-size:11px;line-height:18px;padding:2px 3px 2px 8px;cursor:pointer}
 .dsh-sa-quote-short{display:none}
 .dsh-sa-history-text{display:inline}
 .dsh-sa-chip-remove{box-sizing:border-box;flex:none;width:17px;height:17px;display:inline-flex;align-items:center;justify-content:center;border:0;background:0 0;font:inherit;color:inherit;font-size:12px;line-height:1;padding:0;cursor:pointer;border-radius:3px;opacity:.45}
 .dsh-sa-chip-remove:hover{opacity:1;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsh-sa-chip:hover,.dsh-sa-add:hover,.dsh-sa-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsh-sa-add{width:22px;height:22px;justify-content:center;font-size:15px;line-height:1;padding:0}
+.dsh-sa-chip:hover,.dsh-sa-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsh-sa-btn{padding:3px 6px;font-size:12px;line-height:18px;gap:3px}
-.dsh-sa-btn:disabled,.dsh-sa-add:disabled{opacity:.45;cursor:default}
+.dsh-sa-btn:disabled{opacity:.45;cursor:default}
 .dsh-sa-notice{height:100%;display:flex;align-items:center;justify-content:center;padding:24px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;text-align:center}
 .dsh-sa-error{color:var(--dsw-alias-state-error-primary)}
 .dsh-sa-intro{flex:0 0 auto;box-sizing:border-box;display:flex;align-items:baseline;gap:6px;padding:7px 12px;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary)}
 .dsh-sa-intro-name{flex:none;font-weight:600;color:var(--dsw-alias-label-secondary)}
 .dsh-sa-intro-hint{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dsh-sa-footer{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:4px;border:0;background:0 0;font:inherit;color:var(--dsw-alias-label-tertiary);cursor:pointer;border-radius:var(--dsw-radius-sm);font-size:12px;line-height:18px;padding:3px 6px;white-space:nowrap}
-.dsh-sa-footer:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsh-sa-footer:disabled{opacity:.45;cursor:default}
-.dsh-sa-footer-icon{font-size:15px;line-height:1}
-.dsh-sa-footer-group{display:inline-flex;align-items:center;gap:2px}
 .dsh-sa-history{position:relative;display:inline-flex;align-items:center}
 .dsh-sa-history-btn{box-sizing:border-box;display:inline-flex;align-items:center;gap:3px;border:1px solid var(--dsw-alias-border-l2);background:0 0;font:inherit;color:var(--dsw-alias-label-tertiary);border-radius:999px;padding:1px 7px;font-size:11px;line-height:16px;cursor:pointer;white-space:nowrap}
 .dsh-sa-history-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
@@ -116,7 +109,6 @@ const CSS = `
 .dsh-sa-quote-divider{display:flex;align-items:center;gap:6px;padding:4px 4px 5px;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary)}
 .dsh-sa-quote-divider::before,.dsh-sa-quote-divider::after{content:'';height:1px;flex:1 1 auto;background:var(--dsw-alias-border-l2)}
 @media (max-width:560px){
-  .dsh-sa-dock-label{display:none}
   .dsh-sa-dock{gap:4px;padding-top:2px}
   .dsh-sa-chip{max-width:112px}
   .dsh-sa-chip-label{max-width:84px;padding-left:6px}
@@ -131,14 +123,11 @@ const zh = {
   create: '侧边栏',
   createTitle: '新建侧边栏 Agent',
   confirmNewSidebar: '当前主会话已有 {count} 个侧边栏对话，仍要新增吗？',
-  footerTitle: '新建侧边栏 Agent（没有会话时先建一个主会话）',
-  dockLabel: '侧边栏',
   fallbackTitle: '侧边栏 Agent',
   fallbackChip: '侧边栏',
   connecting: '正在连接侧边栏 Agent…',
   missing: '这个侧边栏 Agent 找不到对应的会话。',
   failed: '侧边栏 Agent 打开失败',
-  createFailed: '创建失败',
   independent: '独立会话，不会写入主会话',
   removeTitle: '移除入口（会话仍保留在列表中）',
   closeTitle: '关闭标签，可在侧边栏历史里恢复',
@@ -191,7 +180,6 @@ const zh = {
   selectionSource: '引用来源',
   selectionFollowup: '我的追问：',
   selectionCreatePending: '侧边栏正在创建，请稍后再试',
-  running: '运行中',
 };
 
 function storageGet(key) {
@@ -220,7 +208,6 @@ function storageRemove(key) {
 }
 
 const subscribers = new Set();
-let lastError = null;
 
 function notifyThreads() {
   for (const listener of [...subscribers]) {
@@ -312,14 +299,6 @@ function restoreThread(parentId, thread) {
   const updated = updateThread(parentId, thread.id, { hidden: false });
   openThread(parentId, updated ?? thread);
   return updated;
-}
-
-function activeMainSessionId() {
-  if (typeof document === 'undefined') return undefined;
-  const nodes = Array.from(document.querySelectorAll('[data-conversation-session]'));
-  const main = nodes.find((node) => node.closest('[data-sidebar-agent]') === null
-    && node.getBoundingClientRect().width > 0);
-  return main?.getAttribute('data-conversation-session') ?? undefined;
 }
 
 function parentOf(childId) {
@@ -545,12 +524,10 @@ async function createThread(parentId, parent) {
     await ctx.sessions.create(request);
     const thread = { id, label, index, createdAt: new Date().toISOString() };
     addThread(parentId, thread);
-    lastError = null;
     notifyThreads();
     openThread(parentId, thread);
     return thread;
   } catch (error) {
-    lastError = error instanceof Error ? error.message : String(error);
     notifyThreads();
     throw error;
   } finally {
@@ -1699,7 +1676,6 @@ function SidebarAgentDock({ sessionId }) {
   const cwd = list.byId[sessionId]?.cwd;
   const preset = list.projectionsBySession?.[sessionId]?.values?.agentPreset;
   const [threads, setThreads] = React.useState(() => readThreads(sessionId));
-  const [creating, setCreating] = React.useState(false);
 
   React.useEffect(() => {
     setThreads(readThreads(sessionId));
@@ -1734,31 +1710,13 @@ function SidebarAgentDock({ sessionId }) {
 
   if (origin === 'subagent' || parentOf(sessionId) !== undefined) return null;
 
-  const create = async () => {
-    if (creating) return;
-    setCreating(true);
-    try {
-      await createThread(sessionId, { cwd, preset });
-      setThreads(readThreads(sessionId));
-    } catch (error) {
-      console.error('[sidebar-agent] create failed', error);
-    } finally {
-      setCreating(false);
-    }
-  };
-
   const visibleThreads = threads.filter((thread) => thread.hidden !== true);
-  const hasThreads = visibleThreads.length > 0;
-  const running = visibleThreads.filter((thread) => list.byId[thread.id]?.running === true).length;
-  const dockLabel = running > 0 ? `${zh.dockLabel} · ${running} ${zh.running}` : zh.dockLabel;
+  if (threads.length === 0) return null;
+
   return React.createElement(
     'div',
     { className: 'dsh-sa-dock', 'data-sidebar-agent-dock': '' },
-    hasThreads ? React.createElement('span', {
-      className: 'dsh-sa-dock-label',
-      title: running >= 3 ? '建议同时运行不超过 3 个侧边栏 Agent' : undefined,
-    }, dockLabel) : null,
-    hasThreads ? React.createElement('div', { className: 'dsh-sa-chipstrip' },
+    visibleThreads.length > 0 ? React.createElement('div', { className: 'dsh-sa-chipstrip' },
       ...visibleThreads.map((thread) => React.createElement(SidebarAgentChip, {
         key: thread.id,
         thread,
@@ -1766,20 +1724,13 @@ function SidebarAgentDock({ sessionId }) {
       })),
     ) : null,
     React.createElement('div', { className: 'dsh-sa-dock-actions' },
-      React.createElement(SidebarAgentHistory, { parentId: sessionId, hideWhenEmpty: true }),
-      React.createElement(SidebarAgentQuote, { parentId: sessionId, threads, cwd, preset }),
-      lastError !== null ? React.createElement('span', {
-        className: 'dsh-sa-error',
-        title: lastError,
-        style: { fontSize: '10px', lineHeight: '16px', whiteSpace: 'nowrap' },
-      }, zh.createFailed) : null,
-      React.createElement('button', {
-        type: 'button',
-        className: hasThreads ? 'dsh-sa-add' : 'dsh-sa-btn',
-        title: zh.createTitle,
-        disabled: creating,
-        onClick: create,
-      }, hasThreads ? '+' : `+ ${zh.create}`),
+      React.createElement(SidebarAgentHistory, { parentId: sessionId }),
+      visibleThreads.length > 0 ? React.createElement(SidebarAgentQuote, {
+        parentId: sessionId,
+        threads,
+        cwd,
+        preset,
+      }) : null,
     ),
   );
 }
@@ -1817,67 +1768,6 @@ function SidebarAgentCreateAction({ sessionId }) {
     },
     React.createElement('span', { 'aria-hidden': 'true' }, '+'),
     zh.create,
-  );
-}
-
-function SidebarAgentFooterAction({ wide }) {
-  const [creating, setCreating] = React.useState(false);
-
-  const create = async () => {
-    if (creating) return;
-    setCreating(true);
-    try {
-      const active = activeMainSessionId();
-      if (active !== undefined) {
-        const list = ctx.sessions.list.getSnapshot();
-        const parent = parentOf(active);
-        if (parent !== undefined) {
-          ctx.get('uiWorkspace')?.openSession(parent);
-          return;
-        }
-        if (list?.byId?.[active]?.origin !== 'subagent') {
-          await createThread(active, {
-            cwd: list?.byId?.[active]?.cwd,
-            preset: list?.projectionsBySession?.[active]?.values?.agentPreset,
-          });
-          return;
-        }
-      }
-      const workspace = ctx.get('uiWorkspace');
-      if (workspace === undefined) throw new Error('uiWorkspace is unavailable');
-      const created = await ctx.sessions.create({});
-      workspace.openSession(created.sessionId);
-      // The parent list projection can lag the create response; createThread
-      // only needs the id, and the tab is attached to that id immediately.
-      await new Promise((resolve) => setTimeout(resolve, 120));
-      await createThread(created.sessionId, {});
-    } catch (error) {
-      console.error('[sidebar-agent] footer create failed', error);
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  return React.createElement(
-    'span',
-    { className: 'dsh-sa-footer-group' },
-    React.createElement('button', {
-      type: 'button',
-      className: 'dsh-sa-footer',
-      title: zh.footerTitle,
-      disabled: creating,
-      onClick: create,
-      'data-sidebar-agent-footer': '',
-    },
-      React.createElement('span', { className: 'dsh-sa-footer-icon', 'aria-hidden': 'true' }, '+'),
-      wide ? zh.create : null,
-    ),
-    React.createElement(SidebarAgentHistory, {
-      resolveParentId: activeMainSessionId,
-      compact: !wide,
-      align: 'left',
-      fixed: true,
-    }),
   );
 }
 
@@ -1961,15 +1851,6 @@ window.__ModuleLoader__.load({
         id: 'sidebar-agent-create',
         order: 15,
       }, SidebarAgentCreateAction)), 'sidebar-agent: header action');
-
-      context.effect(() => context.slots.inject('sidebar.footer.action', () => context.slots.register({
-        name: 'sidebar.footer.action',
-        id: 'sidebar-agent',
-        order: 10,
-      }, SidebarAgentFooterAction)), 'sidebar-agent: footer action');
-
-      if (typeof window !== 'undefined') {
-      }
     }
 
     return {
