@@ -136,6 +136,7 @@ const zh = {
   historyEmpty: '还没有侧边栏历史',
   historyClosed: '已关闭',
   historyOpen: '在侧边栏',
+  running: '运行中',
   historyRemove: '从历史移除（不删除子会话）',
   historyRemoveConfirm: '移除这条历史入口？',
   historyRemoveYes: '移除',

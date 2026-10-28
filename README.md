@@ -85,7 +85,7 @@ https://github.com/liaosiqian/dsh-sidebar-agent.git
 需要固定版本时使用 tag：
 
 ```text
-https://github.com/liaosiqian/dsh-sidebar-agent.git#v0.1.1
+https://github.com/liaosiqian/dsh-sidebar-agent.git#v0.1.2
 ```
 
 也可以让 Agent 执行：
