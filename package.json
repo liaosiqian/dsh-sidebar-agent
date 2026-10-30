@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-sidebar-agent",
-  "version": "0.2.0",
+  "version": "0.3.3",
   "private": true,
   "description": "Independent sidebar agents mounted under a main session, with the full DSH composer, automatic main-session context, and a built-in selection toolbar.",
   "type": "module",
@@ -12,10 +12,12 @@
   },
   "files": [
     "index.js",
+    "archive.js",
     "client.js",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
+    "docs/images/*.png",
     "README.md"
   ],
   "dsh": {

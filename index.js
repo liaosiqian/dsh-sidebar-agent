@@ -15,6 +15,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { SidebarQuestionArchive, archiveInput, questionRequestHandler } from './archive.js';
 
 const PREFIX = 'session-sb-';
 const MARKER = '[侧边栏主会话上下文]';
@@ -340,9 +341,54 @@ async function buildContext(ctx, childId, parentId, anchorTurn) {
   return { text: context, parentSeq: maxSeq };
 }
 
-export const inject = ['sessions'];
+export const inject = ['sessions', 'workspaceRegistry', 'storage', 'connection', 'tools'];
 
-export function apply(ctx) {
+export async function apply(ctx) {
+  const unit = await ctx.storage.backend.get('json').kv.open({
+    name: 'sidebar_agent_questions', version: 1, tables: ['questions'], hasGlobal: false,
+  });
+  const archive = new SidebarQuestionArchive(ctx.workspaceRegistry, unit, parentOf);
+  ctx.effect(() => () => archive.dispose(), 'sidebar-agent: archive storage');
+  await archive.load();
+  ctx.provide('sidebarQuestions', archive);
+  // Connection authenticates this exact route and restricts it to the owner.
+  // Unlike commands.execute, this transport never appends a command lifecycle.
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: '/api/sidebar-agent/questions', methods: ['POST'], requestBody: 'buffered',
+    fetch: questionRequestHandler(archive),
+  }), 'sidebar-agent: background archive requests');
+  ctx.effect(() => ctx.tools.register({
+    name: 'sidebar_questions',
+    description: 'List sidebar questions or manage their archive state. Close archives when idle and defers while work runs; open cancels pending archival and unarchives; forget removes archive management and unarchives. Conversation logs are retained.',
+    parameters: archiveInput,
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+    },
+    execute: (args) => archive.run(args),
+  }), 'sidebar-agent: archive tool');
+  let retryQueued = false;
+  const retry = () => {
+    if (retryQueued) return;
+    retryQueued = true;
+    queueMicrotask(() => {
+      retryQueued = false;
+      void archive.retry().catch((error) => console.error('[sidebar-agent] archive retry failed', error));
+    });
+  };
+  ctx.on('api-session/status', (_id, running) => { if (!running) retry(); });
+  ctx.on('session/event', (_session, event) => {
+    if (['turn/end', 'job/end', 'job/settled', 'schedule/changed'].includes(event.type)) retry();
+  });
+  ctx.on('schedule/changed', retry);
+  ctx.on('subagent/end', retry);
+  // Inactive job/schedule owners may not emit a turn. Retry only pending work,
+  // never poll agent status or load conversation histories.
+  const interval = setInterval(retry, 30000);
+  interval.unref?.();
+  ctx.effect(() => () => clearInterval(interval), 'sidebar-agent: archive retry');
+  retry();
+
   ctx.on('agent/pre-step', async ({ agent, step, signal }, next) => {
     const decision = await next();
     if (decision.kind === 'reject' || signal.aborted || step !== 1) return decision;

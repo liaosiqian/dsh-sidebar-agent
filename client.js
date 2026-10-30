@@ -30,9 +30,23 @@ const TAB_PREFIX = 'dsh.sidebar-agent.tab.v1:';
 const STYLE_ATTR = 'data-dsh-sidebar-agent-style';
 const EMPTY_OPEN_TABS = [];
 const SELECTION_MAX_CHARS = 4000;
+const QUESTIONS_NS = 'sidebarAgent.questions';
+const questionText = {
+  zh: { questions: '问答', title: '侧边栏问答', archived: '已收纳', pending: '完成后收纳', closed: '已关闭', open: '在侧边栏', running: '运行中', opening: '正在打开…', failed: '打开失败', archiveFailed: '收纳失败，点击重试', hint: '关闭后自动归档；点击问答可恢复并继续聊天。', empty: '暂无问答', dismiss: '关闭问答列表', remove: '移除入口并取消归档（保留对话）' },
+  en: { questions: 'Q&A', title: 'Sidebar questions', archived: 'Archived', pending: 'Archive when finished', closed: 'Closed', open: 'In sidebar', running: 'Running', opening: 'Opening…', failed: 'Could not open', archiveFailed: 'Could not archive. Retry', hint: 'Closing archives a question. Open it here to continue chatting.', empty: 'No questions yet', dismiss: 'Close question list', remove: 'Remove shortcut and unarchive (keep conversation)' },
+};
+function qt(key) { return ctx.locale.bind(QUESTIONS_NS)(key); }
+function useQuestionLocale() {
+  React.useSyncExternalStore((listener) => ctx.locale.subscribe(listener), () => ctx.locale.getSnapshot());
+}
+function sessionTitle(list, id) {
+  const value = list.projectionsBySession?.[id]?.values?.title;
+  return typeof value === 'string' ? value : typeof value?.title === 'string' ? value.title : list.byId[id]?.title ?? '';
+}
 
 const CSS = `
 .dsh-sa-root{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+[data-chat-flow-kind="command"]:has([data-dsh-sidebar-agent-command-hidden]){display:none!important}
 .dsh-sa-root>*{min-height:0;flex:1 1 auto}
 .dsh-sa-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dsh-sa-pane-bar{box-sizing:border-box;display:flex;align-items:center;justify-content:flex-end;gap:4px;min-height:27px;padding:4px 8px;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1)}
@@ -50,7 +64,18 @@ const CSS = `
 .dsh-sa-history{position:relative;display:inline-flex;align-items:center}
 .dsh-sa-history-btn{box-sizing:border-box;display:inline-flex;align-items:center;gap:3px;border:1px solid var(--dsw-alias-border-l2);background:0 0;font:inherit;color:var(--dsw-alias-label-tertiary);border-radius:999px;padding:1px 7px;font-size:11px;line-height:16px;cursor:pointer;white-space:nowrap}
 .dsh-sa-history-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsh-sa-history-pop{position:absolute;bottom:calc(100% + 6px);right:0;z-index:80;box-sizing:border-box;width:270px;max-height:320px;overflow:auto;padding:4px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2);box-shadow:0 10px 28px rgba(0,0,0,.22),0 1px 3px rgba(0,0,0,.12);isolation:isolate}
+.dsh-sa-question-mark{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;width:16px;min-width:0;height:20px;flex:0 1 16px;overflow:hidden;padding:0;border:0;background:none;color:var(--dsw-static-blue-450);cursor:pointer;border-radius:4px}
+.dsh-sa-question-mark svg{width:16px;height:18px;flex:none}
+.dsh-sa-question-count{display:none}
+.dsh-sa-question-mark:hover,.dsh-sa-question-mark[aria-expanded=true]{background:color-mix(in srgb,var(--dsw-static-blue-450) 18%,transparent)}
+.dsh-sa-question-mark:focus-visible{outline:2px solid var(--dsw-static-blue-450);outline-offset:1px}
+/* Keep other Slot contributions in their native seat; only our own button moves. */
+[role="treeitem"]>span:has(>[data-slot="sidebar.session.row.leading"] [data-sidebar-agent-leading]){position:relative;overflow:visible}
+[data-slot="sidebar.session.row.leading"]:has(>:not([data-sidebar-agent-leading]) svg,>svg,>button:not([data-sidebar-agent-leading]),>a,>[role="img"])>.dsh-sa-question-mark{position:absolute;inset-block-start:-4px;inset-inline-end:-5px;width:13px;height:13px;flex:none;z-index:1;border:1px solid var(--dsw-specific-sidebar-fill);border-radius:999px;background:var(--dsw-static-blue-450);color:var(--dsw-alias-bg-base);overflow:visible}
+[data-slot="sidebar.session.row.leading"]:has(>:not([data-sidebar-agent-leading]) svg,>svg,>button:not([data-sidebar-agent-leading]),>a,>[role="img"])>.dsh-sa-question-mark>svg{display:none}
+[data-slot="sidebar.session.row.leading"]:has(>:not([data-sidebar-agent-leading]) svg,>svg,>button:not([data-sidebar-agent-leading]),>a,>[role="img"])>.dsh-sa-question-mark>.dsh-sa-question-count{display:block;font:700 9px/11px system-ui,sans-serif;letter-spacing:-.4px}
+[data-slot="sidebar.session.row.leading"]:has(>:not([data-sidebar-agent-leading]) svg,>svg,>button:not([data-sidebar-agent-leading]),>a,>[role="img"])>.dsh-sa-question-mark[data-question-many] {width:17px;inset-inline-end:-7px}
+.dsh-sa-history-pop{position:absolute;bottom:calc(100% + 6px);right:0;z-index:80;box-sizing:border-box;width:270px;max-height:320px;overflow:auto;padding:4px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2);box-shadow:var(--dsw-elevation-panel);isolation:isolate}
 .dsh-sa-history-pop-left{left:0;right:auto}
 .dsh-sa-history-pop-down{top:calc(100% + 6px);bottom:auto}
 .dsh-sa-history-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:5px 7px 4px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);font-weight:600}
@@ -74,7 +99,7 @@ const CSS = `
 .dsh-sa-quote{position:relative;display:inline-flex;align-items:center}
 .dsh-sa-quote-btn{box-sizing:border-box;display:inline-flex;align-items:center;gap:3px;border:1px solid var(--dsw-alias-border-l2);background:0 0;font:inherit;color:var(--dsw-alias-label-tertiary);border-radius:999px;padding:1px 7px;font-size:11px;line-height:16px;cursor:pointer;white-space:nowrap}
 .dsh-sa-quote-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsh-sa-quote-pop{position:absolute;bottom:calc(100% + 6px);right:0;z-index:81;box-sizing:border-box;width:min(320px,calc(100vw - 24px));max-height:min(420px,calc(100vh - 120px));overflow:auto;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2);box-shadow:0 10px 28px rgba(0,0,0,.22),0 1px 3px rgba(0,0,0,.12);isolation:isolate}
+.dsh-sa-quote-pop{position:absolute;bottom:calc(100% + 6px);right:0;z-index:81;box-sizing:border-box;width:min(320px,calc(100vw - 24px));max-height:min(420px,calc(100vh - 120px));overflow:auto;padding:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-layer-2);box-shadow:var(--dsw-elevation-panel);isolation:isolate}
 .dsh-sa-quote-pop-down{top:calc(100% + 6px);bottom:auto}
 .dsh-sa-quote-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:4px 4px 4px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);font-weight:600}
 .dsh-sa-quote-purpose{padding:0 4px 7px;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary)}
@@ -128,9 +153,9 @@ const zh = {
   failed: '侧边栏 Agent 打开失败',
   independent: '独立会话，不会写入主会话',
   removeTitle: '移除入口（会话仍保留在列表中）',
-  closeTitle: '关闭标签，可在侧边栏历史里恢复',
-  history: '历史',
-  historyTitle: '侧边栏历史',
+  closeTitle: '关闭并收纳，可在问答中恢复',
+  history: '问答',
+  historyTitle: '侧边栏问答',
   historyEmpty: '还没有侧边栏历史',
   historyClosed: '已关闭',
   historyOpen: '在侧边栏',
@@ -283,14 +308,141 @@ function removeTabMaps(childId) {
   }
 }
 
-function restoreThread(parentId, thread) {
-  const updated = updateThread(parentId, thread.id, { hidden: false });
-  openThread(parentId, updated ?? thread);
-  return updated;
+const questionOperations = new Map();
+
+/** Same Host operation as the sidebar_questions agent tool; no model turn. */
+function questionOperation(action, parentId, thread) {
+  const previous = questionOperations.get(thread.id) ?? Promise.resolve();
+  const operation = previous.catch(() => {}).then(async () => {
+    const response = await fetch(new URL('api/sidebar-agent/questions', document.baseURI), {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action, parentId, childId: thread.id, label: thread.label }),
+    });
+    let result;
+    try { result = await response.json(); }
+    catch { throw new Error(`Question operation unavailable (HTTP ${response.status}). Refresh this page after the plugin update.`); }
+    if (!response.ok || result.ok !== true) throw new Error(result.error?.message ?? 'Question operation failed');
+    const state = result.value;
+    if (action === 'list') {
+      for (const item of state.items ?? []) {
+        const existing = readThreads(parentId).find((entry) => entry.id === item.childId);
+        if (existing && (existing.archiveState !== item.state || existing.archiveError !== item.error)) {
+          updateThread(parentId, item.childId, { archiveState: item.state, archiveError: item.error ?? null, archiveActivity: item.activity ?? [] });
+        }
+      }
+    } else {
+      updateThread(parentId, thread.id, { archiveState: state.state, archiveError: state.error ?? null, archiveActivity: state.activity ?? [] });
+    }
+    return state;
+  });
+  questionOperations.set(thread.id, operation);
+  void operation.finally(() => { if (questionOperations.get(thread.id) === operation) questionOperations.delete(thread.id); }).catch(() => {});
+  return operation;
+}
+
+const openingThreads = new Set();
+
+async function restoreThread(parentId, thread, navigate = false) {
+  openingThreads.add(thread.id);
+  try {
+    await questionOperation('open', parentId, thread);
+    if (navigate) {
+      ctx.uiWorkspace.openSession(parentId);
+      await waitForParentPane(parentId);
+    }
+    const updated = updateThread(parentId, thread.id, { hidden: false, archiveState: 'open', archiveError: null });
+    openThread(parentId, updated ?? thread);
+    return updated;
+  } finally { openingThreads.delete(thread.id); }
+}
+
+async function waitForParentPane(parentId) {
+  const source = ctx.sidebarRight.mounted;
+  if (source?.getSnapshot() === parentId) return;
+  await new Promise((resolve, reject) => {
+    let unsubscribe = () => {};
+    const timer = window.setTimeout(() => { unsubscribe(); reject(new Error('Main conversation did not open')); }, 10000);
+    const check = () => {
+      if (source?.getSnapshot() !== parentId) return;
+      window.clearTimeout(timer);
+      unsubscribe();
+      resolve();
+    };
+    unsubscribe = source.subscribe(check);
+    check();
+  });
+}
+
+function closeThread(parentId, thread) {
+  updateThread(parentId, thread.id, { hidden: true, closedAt: new Date().toISOString(), archiveState: 'pending', archiveError: null });
+  void questionOperation('close', parentId, thread).catch((error) => {
+    updateThread(parentId, thread.id, { archiveState: 'error', archiveError: String(error?.message ?? error) });
+    console.error('[sidebar-agent] archive failed', error);
+  });
+}
+
+/** Adopt positively closed legacy threads present at activation, never infer a close. */
+function startQuestionSync() {
+  let stopped = false;
+  let timer = 0;
+  const openIds = () => new Set(ctx.sidebarRight.openTabs.getSnapshot().filter((tab) => tab.kind === KIND).map(childIdForTab));
+  const openedAtStart = openIds();
+  const candidates = new Map();
+  // Storage is shared by pages; tab inventories and retain counts are local.
+  // Snapshot only explicit legacy closes so later discoveries cannot be archived.
+  for (const key of Object.keys(window.localStorage)) {
+    if (!key.startsWith(THREADS_PREFIX)) continue;
+    const parentId = key.slice(THREADS_PREFIX.length);
+    for (const thread of readThreads(parentId)) {
+      if (thread.hidden !== true || thread.archiveState !== undefined || openedAtStart.has(thread.id)) continue;
+      if (ctx.sessions.retainInfo(thread.id).getSnapshot().retainedBy.mainView) continue;
+      candidates.set(thread.id, parentId);
+    }
+  }
+  const sync = () => {
+    timer = 0;
+    if (stopped) return;
+    const opened = openIds();
+    const list = ctx.sessions.list.getSnapshot();
+    for (const [id, parentId] of candidates) {
+      const thread = readThreads(parentId).find((item) => item.id === id);
+      // A restore or managed operation permanently cancels this page's adoption,
+      // including while the catalog is loading and after subsequent navigation.
+      if (!thread || thread.hidden !== true || thread.archiveState !== undefined
+        || opened.has(id) || openingThreads.has(id) || removingThreads.has(id)
+        || ctx.sessions.retainInfo(id).getSnapshot().retainedBy.mainView) {
+        candidates.delete(id);
+        continue;
+      }
+      if (questionOperations.has(id) || list.phase !== 'ready' || !list.byId[id]) continue;
+      candidates.delete(id);
+      closeThread(parentId, thread);
+    }
+  };
+  const schedule = () => {
+    if (!stopped && !timer) timer = window.setTimeout(sync, 100);
+  };
+  const unsubscribers = [ctx.sessions.list.subscribe(schedule), ctx.sidebarRight.openTabs.subscribe(schedule), subscribeThreads(schedule)];
+  window.addEventListener('storage', schedule);
+  schedule();
+  return () => {
+    stopped = true;
+    window.clearTimeout(timer);
+    for (const unsubscribe of unsubscribers) unsubscribe();
+    window.removeEventListener('storage', schedule);
+  };
 }
 
 function parentOf(childId) {
-  return storageGet(CHILD_PREFIX + childId) ?? undefined;
+  const stored = storageGet(CHILD_PREFIX + childId);
+  if (stored !== null) return stored;
+  if (typeof childId !== 'string' || !childId.startsWith('session-sb-')) return undefined;
+  try {
+    const encoded = childId.slice(11).split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+    const parent = atob(encoded);
+    return parent.startsWith('session-') ? parent : undefined;
+  } catch { return undefined; }
 }
 
 /**
@@ -514,7 +666,11 @@ function openThread(parentId, thread) {
  * Remove only the sidebar entry, never the child Session. The child is a
  * normal Session and remains available in the Session list.
  */
-function removeThread(parentId, thread) {
+const removingThreads = new Set();
+
+async function removeThread(parentId, thread) {
+  await questionOperation('forget', parentId, thread);
+  removingThreads.add(thread.id);
   const right = ctx.sidebarRight;
   const tabs = typeof right?.tabsIn === 'function' ? right.tabsIn(parentId) : [];
   const doomed = tabs.filter(
@@ -530,6 +686,7 @@ function removeThread(parentId, thread) {
     }
   }
   removeTabMaps(thread.id);
+  removingThreads.delete(thread.id);
 }
 
 const creatingParents = new Set();
@@ -544,11 +701,12 @@ async function createThread(parentId, parent) {
     const request = { sessionId: id };
     if (typeof parent.cwd === 'string' && parent.cwd.length > 0) request.cwd = parent.cwd;
     if (typeof parent.preset === 'string' && parent.preset.length > 0) request.agentPreset = parent.preset;
-    await ctx.sessions.create(request);
+    const createdId = await ctx.sessions.create(request);
+    if (createdId !== id) throw new Error('Sidebar Session identity changed');
     const thread = { id, label, index, createdAt: new Date().toISOString() };
     addThread(parentId, thread);
     notifyThreads();
-    openThread(parentId, thread);
+    await restoreThread(parentId, thread);
     return thread;
   } catch (error) {
     notifyThreads();
@@ -1131,6 +1289,7 @@ async function appendToThreadDraft(parentId, thread, text) {
   const conversation = typeof ctx.get === 'function' ? ctx.get('conversation') : ctx.conversation;
   const initialize = conversation?.input?.requestDraftInitialization;
   if (typeof initialize !== 'function') throw new Error('conversation.input 不可用');
+  await restoreThread(parentId, thread);
   const reference = ctx.sessions.retain(thread.id, { source: 'sidebarChat' });
   try {
     await reference.ready;
@@ -1145,7 +1304,6 @@ async function appendToThreadDraft(parentId, thread, text) {
     // tab's own reference keeps it alive.
     window.setTimeout(() => reference.release(), 1500);
   }
-  restoreThread(parentId, thread);
   focusThreadComposer(thread);
 }
 
@@ -1471,10 +1629,12 @@ function SidebarAgentTitle({ useTabInfo }) {
   const { tab } = useTabInfo();
   const record = tabRecord(tab);
   const label = record?.label;
+  const list = useSessionList();
+  const title = sessionTitle(list, record?.childId);
   return React.createElement(
     'span',
     { className: 'dsh-sa-title' },
-    typeof label === 'string' && label.length > 0 ? label : zh.fallbackTitle,
+    title || (typeof label === 'string' && label.length > 0 ? label : zh.fallbackTitle),
   );
 }
 
@@ -1709,19 +1869,28 @@ function SidebarAgentTab({ useTabInfo, SessionProvider, renderSlot }) {
     if (childId === undefined || !known) return undefined;
     const controller = new AbortController();
     let retained;
-    try {
+    let cancelled = false;
+    setReference(null);
+    setError(null);
+    const initialize = async () => {
+      const thread = readThreads(parentId).find((item) => item.id === childId) ?? { id: childId, label: record?.label };
+      await questionOperation('open', parentId, thread);
+      if (cancelled) return;
+      updateThread(parentId, childId, { hidden: false, archiveState: 'open', archiveError: null });
       retained = ctx.sessions.retain(childId, { source: 'sidebarChat', signal: controller.signal });
-      setError(null);
-      setReference(retained);
-    } catch (cause) {
+      await retained.ready;
+      if (!cancelled) setReference(retained);
+    };
+    void initialize().catch((cause) => {
       console.error('[sidebar-agent] retain failed', cause);
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
+      if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+    });
     return () => {
+      cancelled = true;
       controller.abort();
       retained?.release();
     };
-  }, [childId, known]);
+  }, [childId, parentId, known]);
 
   // Opening or switching a sidebar tab should leave the caret in its own
   // composer. Without this, a click on +侧边栏 leaves focus on the button and
@@ -1781,214 +1950,187 @@ function SidebarAgentTab({ useTabInfo, SessionProvider, renderSlot }) {
   );
 }
 
-function SidebarAgentHistory({ parentId, resolveParentId, compact = false, align = 'right', hideWhenEmpty = false, fixed = false, direction = 'up' }) {
-  const list = useSessionList();
-  const [open, setOpen] = React.useState(false);
-  const [confirmId, setConfirmId] = React.useState(null);
-  const [resolvedParent, setResolvedParent] = React.useState(parentId);
-  const [threads, setThreads] = React.useState(() => (parentId ? readThreads(parentId) : []));
-  const [fixedStyle, setFixedStyle] = React.useState(null);
-  const rootRef = React.useRef(null);
-  const buttonRef = React.useRef(null);
-  const effectiveParent = resolvedParent ?? parentId;
+const questionMenuListeners = new Set();
+let questionMenu = null;
+const questionMenuSource = {
+  subscribe(listener) { questionMenuListeners.add(listener); return () => questionMenuListeners.delete(listener); },
+  getSnapshot() { return questionMenu; },
+};
+function setQuestionMenu(value) {
+  questionMenu = value;
+  for (const listener of questionMenuListeners) listener();
+}
+function dismissQuestionMenu(focus = false) {
+  const trigger = questionMenu?.trigger;
+  setQuestionMenu(null);
+  if (focus && trigger?.isConnected) trigger.focus();
+}
 
+function SidebarAgentHistory({ parentId, hideWhenEmpty = false, navigate = false, leading = false }) {
+  useQuestionLocale();
+  const threads = useThreadList(parentId);
+  const menu = React.useSyncExternalStore(questionMenuSource.subscribe, questionMenuSource.getSnapshot);
+  if (hideWhenEmpty && threads.length === 0) return null;
+  const label = `${qt('questions')} ${threads.length}`;
+  const expanded = menu?.parentId === parentId;
+  return React.createElement('button', {
+    type: 'button', className: leading ? 'dsh-sa-question-mark' : 'dsh-sa-history-btn',
+    title: leading ? `${label} · ${qt('title')}` : qt('title'), 'aria-label': label,
+    'aria-haspopup': 'menu', 'aria-expanded': expanded,
+    'data-sidebar-agent-history': '',
+    'data-sidebar-agent-questions': parentId,
+    'data-sidebar-agent-leading': leading ? '' : undefined,
+    'data-question-many': leading && threads.length > 9 ? '' : undefined,
+    onPointerDown: (event) => event.stopPropagation(),
+    onDoubleClick: (event) => event.stopPropagation(),
+    onClick: (event) => {
+      event.stopPropagation();
+      if (menu?.trigger === event.currentTarget) { dismissQuestionMenu(); return; }
+      setQuestionMenu({ parentId, navigate, trigger: event.currentTarget, rect: event.currentTarget.getBoundingClientRect() });
+    },
+  }, leading ? React.createElement(React.Fragment, null,
+    React.createElement('svg', { viewBox: '0 0 18 20', fill: 'none', 'aria-hidden': 'true' },
+      React.createElement('path', {
+        d: 'M4 2.5h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8l-4.5 3v-3H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z',
+        fill: 'color-mix(in srgb,currentColor 16%,transparent)', stroke: 'currentColor', strokeWidth: 1.4, strokeLinejoin: 'round',
+      }),
+      React.createElement('text', { x: 9, y: 11.3, fill: 'currentColor', fontFamily: 'inherit', fontWeight: 700,
+        fontSize: threads.length > 9 ? 7 : 10, textAnchor: 'middle' }, threads.length > 9 ? '9+' : threads.length),
+    ),
+    React.createElement('span', { className: 'dsh-sa-question-count', 'aria-hidden': 'true' }, threads.length > 9 ? '9+' : threads.length),
+  ) : label);
+}
+
+function SidebarAgentRowQuestions({ sessionId }) {
+  if (parentOf(sessionId) !== undefined) return null;
+  return React.createElement(SidebarAgentHistory, { parentId: sessionId, hideWhenEmpty: true, navigate: true });
+}
+
+function SidebarAgentQuestionMark({ sessionId }) {
+  if (parentOf(sessionId) !== undefined) return null;
+  return React.createElement(SidebarAgentHistory, { parentId: sessionId, hideWhenEmpty: true, navigate: true, leading: true });
+}
+
+function SidebarAgentQuestionMenu({ useWorkspaces }) {
+  useQuestionLocale();
+  const menu = React.useSyncExternalStore(questionMenuSource.subscribe, questionMenuSource.getSnapshot);
+  return menu === null ? null : React.createElement(QuestionMenuBody, { key: menu.parentId, menu, useWorkspaces });
+}
+
+function QuestionMenuBody({ menu, useWorkspaces }) {
+  const { parentId } = menu;
+  const threads = useThreadList(parentId);
+  const list = useSessionList();
+  const tabs = useOpenSidebarTabs();
+  const archivedIds = useWorkspaces((state) => state.archivedSessionIds);
+  const [confirmId, setConfirmId] = React.useState(null);
+  const [busy, setBusy] = React.useState(null);
+  const [error, setError] = React.useState(null);
+  const [position, setPosition] = React.useState(null);
+  const root = React.useRef(null);
+  React.useEffect(() => {
+    const first = readThreads(parentId)[0];
+    if (first) void questionOperation('list', parentId, first).catch(() => {});
+  }, [parentId]);
   React.useLayoutEffect(() => {
-    if (!open || !fixed) {
-      setFixedStyle(null);
-      return undefined;
-    }
     const update = () => {
-      const rect = buttonRef.current?.getBoundingClientRect();
-      if (rect === undefined) return;
-      const margin = 8;
-      const width = Math.min(270, window.innerWidth - margin * 2);
-      const preferred = align === 'left' ? rect.right + 6 : rect.left;
-      const left = Math.max(margin, Math.min(preferred, window.innerWidth - width - margin));
-      if (direction === 'down') {
-        const top = Math.max(margin, rect.bottom + 6);
-        const maxHeight = Math.max(140, Math.min(360, window.innerHeight - top - margin));
-        setFixedStyle({ position: 'fixed', left, top, right: 'auto', bottom: 'auto', width, maxHeight, zIndex: 82 });
-      } else {
-        const bottom = Math.max(margin, window.innerHeight - rect.top + 6);
-        const maxHeight = Math.max(140, Math.min(360, rect.top - 12));
-        setFixedStyle({ position: 'fixed', left, bottom, right: 'auto', top: 'auto', width, maxHeight, zIndex: 82 });
-      }
+      if (!menu.trigger?.isConnected) { dismissQuestionMenu(); return; }
+      const current = menu.trigger.getBoundingClientRect();
+      // Native row actions disappear after focus moves into the floating menu.
+      // Keep the last actual anchor rather than relocating to a hidden 0,0 box.
+      if (current.width > 0 && current.height > 0) menu.rect = current;
+      const rect = menu.rect ?? current;
+      const width = Math.min(300, window.innerWidth - 16);
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+      const below = window.innerHeight - rect.bottom - 14;
+      const above = rect.top - 14;
+      const down = below >= Math.min(240, above);
+      setPosition({ position: 'fixed', left, width,
+        top: down ? rect.bottom + 6 : 'auto', bottom: down ? 'auto' : window.innerHeight - rect.top + 6,
+        maxHeight: Math.max(80, Math.min(400, down ? below : above)), zIndex: 1000, pointerEvents: 'auto' });
     };
     update();
     window.addEventListener('resize', update);
     window.addEventListener('scroll', update, true);
-    return () => {
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
-    };
-  }, [open, fixed, align, direction, threads.length]);
-
+    return () => { window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true); };
+  }, [menu]);
   React.useEffect(() => {
-    setResolvedParent(parentId);
-  }, [parentId]);
-
-  React.useEffect(() => {
-    if (effectiveParent === undefined) {
-      setThreads([]);
-      return undefined;
-    }
-    const sync = () => setThreads(readThreads(effectiveParent));
-    sync();
-    const unsubscribe = subscribeThreads(sync);
-    const onStorage = (event) => {
-      if (event.key === null || event.key === THREADS_PREFIX + effectiveParent) sync();
+    root.current?.querySelector('button')?.focus();
+    const outside = (event) => {
+      if (!root.current?.contains(event.target) && !menu.trigger?.contains(event.target)) dismissQuestionMenu();
     };
-    window.addEventListener('storage', onStorage);
-    return () => {
-      unsubscribe();
-      window.removeEventListener('storage', onStorage);
+    const keydown = (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); dismissQuestionMenu(true); }
     };
-  }, [effectiveParent]);
-
-  React.useEffect(() => {
-    if (!open) return undefined;
-    const onPointerDown = (event) => {
-      if (rootRef.current !== null && !rootRef.current.contains(event.target)) setOpen(false);
-    };
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onPointerDown, true);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown, true);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open]);
-
-  React.useEffect(() => {
-    if (confirmId !== null && !threads.some((thread) => thread.id === confirmId)) setConfirmId(null);
-  }, [confirmId, threads]);
-
-  const toggle = () => {
-    if (open) {
-      setOpen(false);
-      setConfirmId(null);
-      return;
-    }
-    const next = typeof resolveParentId === 'function' ? resolveParentId() : parentId;
-    setConfirmId(null);
-    setResolvedParent(next);
-    setThreads(next === undefined ? [] : readThreads(next));
-    setOpen(true);
-  };
-
-  const restore = (thread) => {
-    if (effectiveParent === undefined) return;
-    setOpen(false);
-    setConfirmId(null);
+    document.addEventListener('pointerdown', outside, true);
+    document.addEventListener('keydown', keydown);
+    return () => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', keydown); };
+  }, [menu]);
+  const restore = async (thread) => {
+    if (busy !== null) return;
+    setBusy(thread.id); setError(null);
     try {
-      restoreThread(effectiveParent, thread);
-    } catch (error) {
-      console.error('[sidebar-agent] could not restore thread', error);
-    }
+      if (archivedIds.includes(parentId)) throw new Error('请先取消主会话的归档，再打开问答');
+      await restoreThread(parentId, thread, menu.navigate);
+      dismissQuestionMenu();
+    } catch (cause) {
+      console.error('[sidebar-agent] could not restore thread', cause);
+      setError(`${qt('failed')}: ${cause?.message ?? cause}`);
+    } finally { setBusy(null); }
   };
-
-  if (hideWhenEmpty && threads.length === 0) return null;
-
-  const sorted = [...threads].sort((left, right) => (Number(left.index) || 0) - (Number(right.index) || 0));
-  const rows = sorted.map((thread) => {
-    const child = list.byId[thread.id];
-    const childTitle = typeof child?.title === 'string' ? child.title : '';
-    const running = child?.running === true;
-    const hidden = thread.hidden === true;
-    const label = typeof thread.label === 'string' && thread.label.length > 0 ? thread.label : zh.fallbackChip;
-    const confirming = confirmId === thread.id;
-    return React.createElement('div', {
-      key: thread.id,
-      className: `dsh-sa-history-row${confirming ? ' dsh-sa-history-row-confirming' : ''}`,
-      role: 'group',
-    },
-      confirming
-        ? React.createElement('div', {
-            className: 'dsh-sa-history-confirm',
-            role: 'alert',
-            title: `${label} · ${zh.historyRemove}`,
-          },
-            React.createElement('span', { className: 'dsh-sa-history-confirm-text' }, zh.historyRemoveConfirm),
-            React.createElement('button', {
-              type: 'button',
-              className: 'dsh-sa-history-confirm-yes',
-              'data-sidebar-agent-history-confirm': '',
-              onClick: (event) => {
-                event.stopPropagation();
-                setConfirmId(null);
-                if (effectiveParent !== undefined) removeThread(effectiveParent, thread);
-              },
-            }, zh.historyRemoveYes),
-            React.createElement('button', {
-              type: 'button',
-              className: 'dsh-sa-history-confirm-no',
-              'data-sidebar-agent-history-cancel': '',
-              onClick: (event) => {
-                event.stopPropagation();
-                setConfirmId(null);
-              },
-            }, zh.historyRemoveNo),
-          )
+  const remove = async (thread) => {
+    if (busy !== null) return;
+    setBusy(thread.id); setError(null);
+    try { await removeThread(parentId, thread); setConfirmId(null); }
+    catch (cause) { setError(String(cause?.message ?? cause)); }
+    finally { setBusy(null); }
+  };
+  const onKeyDown = (event) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    const buttons = [...root.current.querySelectorAll('button:not(:disabled)')];
+    const index = buttons.indexOf(document.activeElement);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+      : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+    event.preventDefault(); buttons[next]?.focus();
+  };
+  return React.createElement('div', {
+    ref: root, className: 'dsh-sa-history-pop', role: 'menu', 'aria-label': qt('title'),
+    'data-sidebar-agent-history-pop': '', style: position ?? { visibility: 'hidden' }, onKeyDown,
+  },
+    React.createElement('div', { className: 'dsh-sa-history-head' },
+      React.createElement('span', null, `${qt('title')} · ${threads.length}`),
+      React.createElement('button', { type: 'button', className: 'dsh-sa-btn', 'aria-label': qt('dismiss'), onClick: () => dismissQuestionMenu(true) }, '×')),
+    error ? React.createElement('div', { className: 'dsh-sa-quote-error', role: 'alert' }, error) : null,
+    ...[...threads].sort((a, b) => (Number(a.index) || 0) - (Number(b.index) || 0)).map((thread) => {
+      const label = thread.label || zh.fallbackChip;
+      const title = sessionTitle(list, thread.id);
+      const opened = tabs.some((tab) => tab.kind === KIND && childIdForTab(tab) === thread.id);
+      const archived = archivedIds.includes(thread.id);
+      const state = busy === thread.id ? qt('opening') : archived ? qt('archived')
+        : list.byId[thread.id]?.running ? qt('running')
+        : thread.hidden && thread.archiveState === 'pending' ? qt('pending')
+        : thread.hidden ? qt('closed') : opened ? qt('open') : qt('closed');
+      return React.createElement('div', { key: thread.id, className: 'dsh-sa-history-row', role: 'group' },
+        confirmId === thread.id ? React.createElement('div', { className: 'dsh-sa-history-confirm' },
+          React.createElement('span', { className: 'dsh-sa-history-confirm-text' }, zh.historyRemoveConfirm),
+          React.createElement('button', { type: 'button', disabled: busy !== null, className: 'dsh-sa-history-confirm-yes', onClick: () => void remove(thread) }, zh.historyRemoveYes),
+          React.createElement('button', { type: 'button', disabled: busy !== null, className: 'dsh-sa-history-confirm-no', onClick: () => setConfirmId(null) }, zh.historyRemoveNo))
         : React.createElement(React.Fragment, null,
-            React.createElement('button', {
-              type: 'button',
-              role: 'menuitem',
-              className: 'dsh-sa-history-main',
-              title: childTitle.length > 0 ? `${label} · ${childTitle}` : `${label}（${hidden ? zh.historyClosed : zh.historyOpen}）`,
-              onClick: () => restore(thread),
-              'data-sidebar-agent-thread': thread.id,
-            },
-              React.createElement('span', { className: 'dsh-sa-history-copy' },
-                React.createElement('span', { className: 'dsh-sa-history-label' }, label),
-                childTitle.length > 0 ? React.createElement('span', { className: 'dsh-sa-history-title' }, childTitle) : null,
-              ),
-              React.createElement('span', { className: 'dsh-sa-history-state' },
-                running ? zh.running : hidden ? zh.historyClosed : zh.historyOpen),
-            ),
-            React.createElement('button', {
-              type: 'button',
-              className: 'dsh-sa-history-remove',
-              title: zh.historyRemove,
-              'aria-label': zh.historyRemove,
-              'data-sidebar-agent-history-remove': '',
-              onClick: (event) => {
-                event.stopPropagation();
-                setConfirmId(thread.id);
-              },
-            }, '×'),
-          ),
-    );
-  });
-
-  return React.createElement('span', { className: 'dsh-sa-history', ref: rootRef },
-    React.createElement('button', {
-      type: 'button',
-      className: 'dsh-sa-history-btn',
-      ref: buttonRef,
-      title: zh.historyTitle,
-      'aria-haspopup': 'menu',
-      'aria-expanded': open,
-      onClick: toggle,
-      'data-sidebar-agent-history': '',
-    },
-      React.createElement('span', { 'aria-hidden': 'true' }, '↺'),
-      compact ? null : React.createElement('span', { className: 'dsh-sa-history-text' }, zh.history),
-    ),
-    open ? React.createElement('div', {
-      className: `dsh-sa-history-pop${align === 'left' ? ' dsh-sa-history-pop-left' : ''}${direction === 'down' ? ' dsh-sa-history-pop-down' : ''}`,
-      role: 'menu',
-      'data-sidebar-agent-history-pop': '',
-      style: fixedStyle ?? undefined,
-    },
-      React.createElement('div', { className: 'dsh-sa-history-head' },
-        React.createElement('span', null, zh.historyTitle),
-        React.createElement('span', { className: 'dsh-sa-history-count' }, `${threads.length}`),
-      ),
-      rows.length > 0 ? rows : React.createElement('div', { className: 'dsh-sa-history-empty' }, zh.historyEmpty),
-    ) : null,
-  );
+          React.createElement('button', { type: 'button', role: 'menuitem', className: 'dsh-sa-history-main',
+            disabled: busy !== null, title: title || label, onClick: () => void restore(thread), 'data-sidebar-agent-thread': thread.id },
+            React.createElement('span', { className: 'dsh-sa-history-copy' },
+              React.createElement('span', { className: 'dsh-sa-history-label' }, title || label),
+              title ? React.createElement('span', { className: 'dsh-sa-history-title' }, label) : null),
+            React.createElement('span', { className: 'dsh-sa-history-state', title: (thread.archiveActivity ?? []).map((item) => item.label || item.family).join('\n') }, state)),
+          thread.archiveState === 'error' && thread.hidden ? React.createElement('button', {
+            type: 'button', className: 'dsh-sa-btn dsh-sa-error', title: thread.archiveError, 'aria-label': qt('archiveFailed'),
+            onClick: () => closeThread(parentId, thread),
+          }, '↻') : null,
+          React.createElement('button', { type: 'button', className: 'dsh-sa-history-remove', title: qt('remove'), 'aria-label': qt('remove'),
+            disabled: busy !== null, onClick: () => setConfirmId(thread.id) }, '×')));
+    }),
+    threads.length === 0 ? React.createElement('div', { className: 'dsh-sa-history-empty' }, qt('empty')) : null,
+    React.createElement('div', { className: 'dsh-sa-quote-foot' }, qt('hint')));
 }
 
 function SidebarAgentCreateAction({ sessionId }) {
@@ -2044,6 +2186,12 @@ function SidebarAgentCreateAction({ sessionId }) {
   );
 }
 
+// Keep the old command events for replay, but omit their internal UI rows.
+// The exact command-name slot leaves every ordinary user command unchanged.
+function SidebarAgentLegacyCommand() {
+  return React.createElement('span', { 'data-dsh-sidebar-agent-command-hidden': '', hidden: true, 'aria-hidden': 'true' });
+}
+
 function installStyle() {
   for (const old of document.querySelectorAll(`style[${STYLE_ATTR}]`)) old.remove();
   const style = document.createElement('style');
@@ -2077,6 +2225,21 @@ window.__ModuleLoader__.load({
 
     function applyInner(context) {
       context.effect(() => installStyle(), 'sidebar-agent: styles');
+      context.effect(() => context.locale.register(QUESTIONS_NS, questionText), 'sidebar-agent: question language');
+      context.effect(() => () => dismissQuestionMenu(), 'sidebar-agent: dismiss questions');
+      context.effect(() => startQuestionSync(), 'sidebar-agent: archive synchronization');
+      context.effect(() => context.slots.inject('conversation.chat.commandview', () => context.slots.register({
+        name: 'conversation.chat.commandview', key: 'sidebar-question',
+      }, SidebarAgentLegacyCommand)), 'sidebar-agent: hide legacy internal commands');
+      context.effect(() => context.slots.inject('shell.overlay', () => context.slots.register({
+        name: 'shell.overlay', id: 'sidebar-agent-questions', order: 90,
+      }, SidebarAgentQuestionMenu)), 'sidebar-agent: question list');
+      context.effect(() => context.slots.inject('sidebar.workspaces.session.row.action', () => context.slots.register({
+        name: 'sidebar.workspaces.session.row.action', id: 'sidebar-agent-questions', order: 0,
+      }, SidebarAgentRowQuestions)), 'sidebar-agent: row questions');
+      context.effect(() => context.slots.inject('sidebar.session.row.leading', () => context.slots.register({
+        name: 'sidebar.session.row.leading', id: 'sidebar-agent-questions', order: 20,
+      }, SidebarAgentQuestionMark)), 'sidebar-agent: visible question mark');
 
       const tabs = tabsFor(context);
       if (tabs === undefined) {
@@ -2119,7 +2282,9 @@ window.__ModuleLoader__.load({
         return right.registerCloseHandler(KIND, (parentId, tab) => {
           const childId = childIdForTab(tab);
           if (childId === undefined) return;
-          updateThread(parentId, childId, { hidden: true, closedAt: new Date().toISOString() });
+          if (removingThreads.has(childId)) return;
+          const thread = readThreads(parentId).find((item) => item.id === childId);
+          if (thread) closeThread(parentId, thread);
           removeTabMaps(childId);
         });
       }, 'sidebar-agent: tab close history');
@@ -2141,7 +2306,7 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['sessions', 'slots', 'sidebarRight'],
+      inject: ['sessions', 'slots', 'sidebarRight', 'uiWorkspace', 'locale'],
       apply,
     };
   },
