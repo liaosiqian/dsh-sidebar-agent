@@ -27,7 +27,7 @@ function observable(initial) {
 }
 
 /** Load the unmodified browser artifact through its real factory and registrations. */
-function fixture(rows = []) {
+function fixture(rows = [], { nativeQuote = false, nativeSlot = true, interactionService = true, confirmNew = true, nativeTargetQuote = false } = {}) {
   const values = { [threadsPrefix + parentId]: JSON.stringify(rows) };
   const catalog = Object.fromEntries([parentId, ...rows.map((row) => row.id)].map((id) => [id, { title: id }]));
   const pages = new Set();
@@ -47,6 +47,17 @@ function fixture(rows = []) {
     const events = new Map();
     const disposers = [];
     const registrations = new Map();
+    const registrationOptions = new Map();
+    const slotInjections = new Set();
+    const interactions = observable(nativeQuote ? ['quote'] : []);
+    const drafts = new Map();
+    const insertions = [];
+    const nativeQuotes = [];
+    let draftBlocked = false;
+    let quoteBlocked = false;
+    let targetSession = { removed: false, subagent: null };
+    const languages = new Map();
+    const localeState = observable({ id: 'zh' });
     const retainedMain = new Set(mainView);
     const tabs = observable(initialTabs);
     const list = observable({ phase, byId: { ...catalog } });
@@ -54,7 +65,21 @@ function fixture(rows = []) {
     let module;
     let closeHandler;
     const instance = {
-      tabs, list,
+      tabs, list, interactions, drafts, insertions, nativeQuotes,
+      registrationOptions,
+      blockQuote(value) { quoteBlocked = value; },
+      setTargetSession(value) { targetSession = value; },
+      render(name, props = {}) { return registrations.get(name)?.(props); },
+      setLocale(id) { localeState.set({ id }); },
+      blockDraft(value) { draftBlocked = value; },
+      setNativeQuote(enabled) { interactions.set(enabled ? ['quote'] : []); },
+      setNativeSlot(enabled) {
+        for (const injection of slotInjections) {
+          if (injection.name !== 'conversation.chat.text-interaction') continue;
+          if (!enabled) { injection.dispose?.(); injection.dispose = undefined; }
+          else if (!injection.dispose) injection.dispose = injection.register();
+        }
+      },
       emit(type, event) { for (const listener of [...(events.get(type) ?? [])]) listener(event); },
       async flush() {
         // Timers are deterministic; the event-loop yield settles real operation promises.
@@ -102,14 +127,52 @@ function fixture(rows = []) {
     });
     const context = {
       effect(operation) { const dispose = operation(); if (typeof dispose === 'function') disposers.push(dispose); },
-      locale: { register: () => () => {} },
-      get: () => ({ register: () => () => {} }),
+      locale: {
+        register(namespace, dicts) { languages.set(namespace, dicts); return () => languages.delete(namespace); },
+        bind: (namespace) => (key) => languages.get(namespace)?.[localeState.getSnapshot().id]?.[key] ?? key,
+        getSnapshot: localeState.getSnapshot,
+        subscribe: localeState.subscribe,
+      },
+      get: (name) => {
+        if (name === 'uiConversation') return interactionService ? { interactions } : undefined;
+        if (name === 'conversation') return {
+          blocks: { storeFor: () => ({ getSnapshot: () => quoteBlocked ? { reason: 'blocked' } : undefined }) },
+          input: {
+            for: nativeTargetQuote ? (scope) => ({
+              state: { getSnapshot: () => ({ phase: draftBlocked ? 'sending' : 'plain' }) },
+              insertQuote(text) {
+                assert.equal(draftBlocked || quoteBlocked, false);
+                nativeQuotes.push({ id: scope.id, text });
+                drafts.set(scope.id, (drafts.get(scope.id) ?? '') + text.split('\n').map((line) => `> ${line}`).join('\n'));
+                return true;
+              },
+            }) : undefined,
+            requestDraftInitialization(binding, options) {
+              if (draftBlocked) return 'blocked';
+              insertions.push({ id: binding.id, ...options });
+              drafts.set(binding.id, (drafts.get(binding.id) ?? '') + options.prompt);
+              return 'applied';
+            },
+          },
+        };
+        return { register: () => () => {} };
+      },
       slots: {
-        inject: (_name, register) => register(),
-        register(options, component) { registrations.set(options.name, component); return () => registrations.delete(options.name); },
+        inject(name, register) {
+          const injection = { name, register, dispose: undefined };
+          slotInjections.add(injection);
+          if (name !== 'conversation.chat.text-interaction' || nativeSlot) injection.dispose = register();
+          return () => { injection.dispose?.(); slotInjections.delete(injection); };
+        },
+        register(options, component) {
+          registrations.set(options.name, component);
+          registrationOptions.set(options.name, options);
+          return () => { registrations.delete(options.name); registrationOptions.delete(options.name); };
+        },
       },
       sessions: {
         list,
+        retain(id) { return { ready: Promise.resolve(), binding: { id, ctx: { id }, session: { getSnapshot: () => targetSession } }, release() {} }; },
         retainInfo: (id) => ({ getSnapshot: () => ({ retainedBy: retainedMain.has(id) ? { mainView: 1 } : {} }) }),
         async create({ sessionId }) {
           catalog[sessionId] = { title: sessionId, blank: true };
@@ -130,16 +193,18 @@ function fixture(rows = []) {
       createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
       useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
       useEffect() {},
+      useRef: (initial) => ({ current: initial }),
       useCallback: (callback) => callback,
       useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
     };
     runInNewContext(clientSource, {
       console, URL, btoa, atob,
+      requestAnimationFrame(callback) { const id = ++nextTimer; timers.set(id, callback); return id; },
       crypto: { randomUUID: () => `question-${++nextId}` },
       window: {
         localStorage,
         __ModuleLoader__: { load(value) { module = value; } },
-        confirm: () => true,
+        confirm: () => confirmNew,
         setTimeout(callback) { const id = ++nextTimer; timers.set(id, callback); return id; },
         clearTimeout: (id) => timers.delete(id),
         addEventListener(type, listener) {
@@ -317,4 +382,259 @@ test('plugin disposal cancels migration timers and subscriptions', async () => {
   assert.equal(page.list.listenerCount, 0);
   assert.equal(page.tabs.listenerCount, 0);
   assert.equal(page.storageListenerCount, 0);
+});
+
+const nativeSeat = 'conversation.chat.text-interaction';
+const legacySeat = 'conversation.composer.dock';
+function selectionSurface(page, overrides = {}) {
+  const calls = { quotes: [], cleared: 0, dismissed: 0 };
+  const props = {
+    sessionId: parentId,
+    useSession: (select) => select({ removed: false, subagent: null }),
+    readText: () => 'Visible math: x².\nSecond line',
+    clearSelection: () => { calls.cleared += 1; },
+    dismiss: () => { calls.dismissed += 1; },
+    inputActions: { insertQuote(text) { calls.quotes.push(text); return true; } },
+    ...overrides,
+  };
+  const element = page.render(nativeSeat, props);
+  const buttons = element?.type === 'button' ? [element] : element?.props.children.filter((item) => item?.type === 'button') ?? [];
+  return { element, buttons, calls, props };
+}
+
+test('native Quote uses one local surface and never mounts the legacy selection listeners', () => {
+  const page = fixture([], { nativeQuote: true }).page();
+  const options = page.registrationOptions.get(nativeSeat);
+  assert.equal(options.key, 'quote');
+  assert.equal(options.priority, -100);
+  assert.equal(page.render(legacySeat, { sessionId: parentId }), null);
+  const { element, buttons, calls } = selectionSurface(page);
+  assert.equal(element.props['data-sidebar-agent-selection'], 'native');
+  assert.deepEqual(buttons.map((button) => button.props.children[0]), ['复制', '引用文本', '在侧边栏提问']);
+  buttons[1].props.onClick();
+  assert.deepEqual(calls.quotes, ['Visible math: x².\nSecond line']);
+  assert.equal(calls.cleared, 1);
+  assert.equal(calls.dismissed, 1);
+  page.dispose();
+});
+
+test('native Quote preserves a locked draft and dismisses stale selections without insertion', () => {
+  const page = fixture([], { nativeQuote: true }).page();
+  const locked = selectionSurface(page, { inputActions: { insertQuote: () => false } });
+  locked.buttons[1].props.onClick();
+  assert.equal(locked.calls.cleared, 0);
+  assert.equal(locked.calls.dismissed, 0);
+  const stale = selectionSurface(page, { readText: () => null });
+  stale.buttons[1].props.onClick();
+  assert.equal(stale.calls.quotes.length, 0);
+  assert.equal(stale.calls.dismissed, 1);
+  page.dispose();
+});
+
+test('native quote availability follows runtime registration, slot collapse and plugin unload', () => {
+  const page = fixture([], { nativeQuote: true }).page();
+  assert.equal(page.render(legacySeat), null);
+  page.setNativeSlot(false);
+  assert.equal(page.render(legacySeat).type.name, 'SidebarAgentSelectionToolbar');
+  page.setNativeSlot(true);
+  assert.equal(page.render(legacySeat), null);
+  page.setNativeQuote(false);
+  assert.equal(page.registrationOptions.has(nativeSeat), false);
+  assert.equal(page.render(legacySeat).type.name, 'SidebarAgentSelectionToolbar');
+  page.setNativeQuote(true);
+  assert.equal(page.render(legacySeat), null);
+  page.dispose();
+  assert.equal(page.interactions.listenerCount, 0);
+  assert.equal(page.registrationOptions.has(nativeSeat), false);
+});
+
+test('older DSH keeps the legacy toolbar when native quotes are absent', () => {
+  for (const interactionService of [false, true]) {
+    const page = fixture([], { interactionService }).page();
+    assert.equal(page.registrationOptions.has(nativeSeat), false);
+    assert.equal(page.render(legacySeat).type.name, 'SidebarAgentSelectionToolbar');
+    page.dispose();
+  }
+});
+
+test('native admission can register before its Slot without suppressing the legacy fallback early', () => {
+  const page = fixture([], { nativeQuote: true, nativeSlot: false }).page();
+  assert.equal(page.registrationOptions.has(nativeSeat), false);
+  assert.equal(page.render(legacySeat).type.name, 'SidebarAgentSelectionToolbar');
+  page.setNativeSlot(true);
+  assert.equal(page.render(legacySeat), null);
+  page.dispose();
+});
+
+test('read-only child Sessions cannot quote and sidebar children never offer recursive Ask', () => {
+  const page = fixture([], { nativeQuote: true }).page();
+  for (const session of [
+    { removed: true, subagent: null },
+    { removed: false, subagent: { address: { mode: 'oneShot' }, parentAvailable: true } },
+    { removed: false, subagent: { address: { mode: 'continuable' }, parentAvailable: false } },
+  ]) assert.equal(selectionSurface(page, { useSession: (select) => select(session) }).element, null);
+  const childSessionId = `session-sb-${Buffer.from(parentId).toString('base64url')}.child`;
+  const child = selectionSurface(page, { sessionId: childSessionId });
+  assert.equal(child.buttons.length, 1);
+  assert.equal(child.buttons[0].props.children[0], '引用文本');
+  child.buttons[0].props.onClick();
+  assert.equal(child.calls.quotes.length, 1);
+  assert.equal(child.calls.cleared, 1);
+  page.dispose();
+});
+
+test('selection actions follow the active locale', () => {
+  const page = fixture([], { nativeQuote: true }).page();
+  page.setLocale('en');
+  assert.deepEqual(selectionSurface(page).buttons.map((button) => button.props.children[0]), ['Copy', 'Quote text', 'Ask in sidebar']);
+  page.dispose();
+});
+
+test('Ask captures sanitized native text, guards double clicks, then appends to the same sidebar draft', async () => {
+  const f = fixture([], { nativeQuote: true });
+  const page = f.page();
+  const release = f.holdOpen();
+  const first = selectionSurface(page);
+  first.buttons[2].props.onClick();
+  first.buttons[2].props.onClick();
+  await setImmediate();
+  assert.equal(f.readRows().length, 1);
+  assert.equal(f.requests.filter((request) => request.action === 'open').length, 1);
+  release();
+  await page.flush();
+  assert.equal(page.insertions.length, 1);
+  const id = f.readRows()[0].id;
+  assert.ok(page.drafts.get(id).includes('> Visible math: x².\n> Second line'));
+  assert.equal(page.drafts.has(parentId), false);
+  assert.equal(first.calls.cleared, 1);
+  assert.equal(first.calls.dismissed, 1);
+  const second = selectionSurface(page, { readText: () => 'Another excerpt' });
+  second.buttons[2].props.onClick();
+  await page.flush();
+  assert.equal(f.readRows().length, 1);
+  assert.equal(page.insertions.length, 2);
+  assert.equal(page.insertions[1].id, id);
+  assert.ok(page.drafts.get(id).includes('> Another excerpt'));
+  assert.ok(f.requests.every((request) => request.action === 'open'));
+  page.dispose();
+});
+
+test('sidebar excerpts use the target Session native Quote with source and follow-up outside it', async () => {
+  const f = fixture([], { nativeQuote: true, nativeTargetQuote: true });
+  const page = f.page();
+  const first = selectionSurface(page);
+  first.buttons[2].props.onClick();
+  await page.flush();
+  const id = f.readRows()[0].id;
+  assert.deepEqual(page.nativeQuotes, [{ id, text: 'Visible math: x².\nSecond line' }]);
+  assert.equal(page.insertions.length, 2);
+  assert.ok(page.insertions[0].prompt.includes('### 主会话选中内容'));
+  assert.ok(page.insertions[1].prompt.includes('我的追问：'));
+  assert.ok(page.insertions.every((item) => !item.prompt.includes('> Visible math')));
+  assert.equal(page.drafts.has(parentId), false);
+  const second = selectionSurface(page, { readText: () => 'Second excerpt' });
+  second.buttons[2].props.onClick();
+  await page.flush();
+  assert.equal(page.nativeQuotes.length, 2);
+  assert.equal(page.nativeQuotes[1].id, id);
+  assert.equal(f.readRows().length, 1);
+  assert.ok(page.drafts.get(id).includes('Visible math: x².'));
+  assert.ok(page.drafts.get(id).includes('Second excerpt'));
+  page.dispose();
+});
+
+test('native sidebar Quote preserves an existing draft and never replaces its content', async () => {
+  const f = fixture([{ id: childId, hidden: false }], { nativeQuote: true, nativeTargetQuote: true });
+  const page = f.page({ tabs: [tabFor()] });
+  page.drafts.set(childId, 'Existing unsent draft and reference chip');
+  selectionSurface(page).buttons[2].props.onClick();
+  await page.flush();
+  assert.ok(page.drafts.get(childId).startsWith('Existing unsent draft and reference chip'));
+  assert.equal(page.nativeQuotes.length, 1);
+  assert.ok(page.insertions.every((item) => item.whenDraftExists === 'append'));
+  page.dispose();
+});
+
+for (const reason of ['submission', 'composer block', 'removed Session']) {
+  test(`native sidebar Quote leaves the entire draft unchanged under ${reason}`, async () => {
+    const f = fixture([{ id: childId, hidden: false }], { nativeQuote: true, nativeTargetQuote: true });
+    const page = f.page({ tabs: [tabFor()] });
+    page.drafts.set(childId, 'Keep this draft');
+    if (reason === 'submission') page.blockDraft(true);
+    if (reason === 'composer block') page.blockQuote(true);
+    if (reason === 'removed Session') page.setTargetSession({ removed: true, subagent: null });
+    const surface = selectionSurface(page);
+    surface.buttons[2].props.onClick();
+    await page.flush();
+    assert.equal(page.drafts.get(childId), 'Keep this draft');
+    assert.equal(page.nativeQuotes.length, 0);
+    assert.equal(page.insertions.length, 0);
+    assert.equal(surface.calls.cleared, 0);
+    page.dispose();
+  });
+}
+
+test('a pending sidebar operation does not clear or dismiss a newer selection', async () => {
+  const f = fixture([], { nativeQuote: true });
+  const page = f.page();
+  const release = f.holdOpen();
+  let text = 'Original excerpt';
+  const surface = selectionSurface(page, { readText: () => text });
+  surface.buttons[2].props.onClick();
+  await setImmediate();
+  text = 'A newer selection';
+  release();
+  await page.flush();
+  assert.equal(page.insertions.length, 1);
+  assert.ok(page.insertions[0].prompt.includes('> Original excerpt'));
+  assert.equal(page.insertions[0].prompt.includes('A newer selection'), false);
+  assert.equal(surface.calls.cleared, 0);
+  assert.equal(surface.calls.dismissed, 0);
+  page.dispose();
+});
+
+test('Ask truncates only sidebar excerpts and keeps the native Quote input intact', async () => {
+  const page = fixture([], { nativeQuote: true }).page();
+  const text = '界'.repeat(4500);
+  const surface = selectionSurface(page, { readText: () => text });
+  surface.buttons[1].props.onClick();
+  assert.equal(surface.calls.quotes[0], text);
+  surface.buttons[2].props.onClick();
+  await page.flush();
+  assert.ok(page.insertions[0].prompt.includes('界'.repeat(4000)));
+  assert.equal(page.insertions[0].prompt.includes('界'.repeat(4001)), false);
+  assert.ok(page.insertions[0].prompt.includes('选区已截断'));
+  page.dispose();
+});
+
+test('cancelling a new sidebar leaves the selection and all existing question drafts unchanged', async () => {
+  const f = fixture([{ id: childId, hidden: true, archiveState: 'archived' }], { nativeQuote: true, confirmNew: false });
+  const page = f.page();
+  const surface = selectionSurface(page);
+  surface.buttons[2].props.onClick();
+  await page.flush();
+  assert.equal(f.readRows().length, 1);
+  assert.equal(f.requests.length, 0);
+  assert.equal(page.insertions.length, 0);
+  assert.equal(surface.calls.cleared, 0);
+  assert.equal(surface.calls.dismissed, 0);
+  page.dispose();
+});
+
+test('Ask retains selection on blocked target drafts and ignores expired selections', async () => {
+  const f = fixture([{ id: childId, hidden: false }], { nativeQuote: true });
+  const page = f.page({ tabs: [tabFor()] });
+  page.blockDraft(true);
+  const blocked = selectionSurface(page);
+  blocked.buttons[2].props.onClick();
+  await page.flush();
+  assert.equal(page.insertions.length, 0);
+  assert.equal(blocked.calls.cleared, 0);
+  assert.equal(blocked.calls.dismissed, 0);
+  const stale = selectionSurface(page, { readText: () => null });
+  stale.buttons[2].props.onClick();
+  await page.flush();
+  assert.equal(stale.calls.dismissed, 1);
+  assert.equal(page.insertions.length, 0);
+  page.dispose();
 });

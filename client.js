@@ -30,6 +30,16 @@ const TAB_PREFIX = 'dsh.sidebar-agent.tab.v1:';
 const STYLE_ATTR = 'data-dsh-sidebar-agent-style';
 const EMPTY_OPEN_TABS = [];
 const SELECTION_MAX_CHARS = 4000;
+const SELECTION_SLOT = 'conversation.chat.text-interaction';
+const SELECTION_NS = 'sidebarAgent.selection';
+const selectionText = {
+  zh: { copy: '复制', quote: '引用文本', ask: '在侧边栏提问', toolbar: '选中文字操作', copyFailed: '复制失败，请检查浏览器剪贴板权限', insertFailed: '输入框暂时无法插入引用，请稍后重试', askFailed: '侧边栏插入失败', cancelled: '已取消新增侧边栏，选区仍在', pending: '正在放入侧边栏…' },
+  en: { copy: 'Copy', quote: 'Quote text', ask: 'Ask in sidebar', toolbar: 'Selected text actions', copyFailed: 'Could not copy. Check clipboard permission', insertFailed: 'The composer cannot accept a quote right now. Try again', askFailed: 'Could not insert into the sidebar', cancelled: 'Sidebar creation cancelled; the selection is unchanged', pending: 'Adding to sidebar…' },
+};
+function useSelectionText() {
+  React.useSyncExternalStore((listener) => ctx.locale.subscribe(listener), () => ctx.locale.getSnapshot());
+  return ctx.locale.bind(SELECTION_NS);
+}
 const QUESTIONS_NS = 'sidebarAgent.questions';
 const questionText = {
   zh: { questions: '问答', title: '侧边栏问答', archived: '已收纳', pending: '完成后收纳', closed: '已关闭', open: '在侧边栏', running: '运行中', opening: '正在打开…', failed: '打开失败', archiveFailed: '收纳失败，点击重试', hint: '关闭后自动归档；点击问答可恢复并继续聊天。', empty: '暂无问答', dismiss: '关闭问答列表', remove: '移除入口并取消归档（保留对话）' },
@@ -128,6 +138,11 @@ const CSS = `
 .dsh-sa-quote-divider{display:flex;align-items:center;gap:6px;padding:4px 4px 5px;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary)}
 .dsh-sa-quote-divider::before,.dsh-sa-quote-divider::after{content:'';height:1px;flex:1 1 auto;background:var(--dsw-alias-border-l2)}
 .dsh-sa-sel-toolbar{position:fixed;z-index:1200;display:flex;align-items:center;gap:2px;padding:4px;border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-2);box-shadow:var(--dsw-elevation-panel);backdrop-filter:var(--dsw-menu-backdrop-filter);transform:translateX(-50%);font-family:var(--dsw-font-family)}
+.dsh-sa-sel-native{display:flex;flex-wrap:wrap;align-items:center;gap:2px;max-width:100%;padding:4px;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;background:var(--dsw-alias-bg-layer-2);box-shadow:var(--dsw-elevation-panel);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px}
+.dsh-sa-sel-native .dsh-sa-sel-btn{border-radius:999px;font-size:13px;padding:2px 8px}
+.dsh-sa-sel-btn:disabled{opacity:.5;cursor:default}
+.dsh-sa-sel-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.dsh-sa-sel-status{flex-basis:100%;padding:2px 8px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
 .dsh-sa-sel-btn{border:0;background:0 0;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:20px;padding:2px 8px;border-radius:var(--dsw-radius-sm);cursor:pointer;white-space:nowrap}
 .dsh-sa-sel-btn:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsh-sa-sel-btn-primary{color:var(--dsw-alias-state-business-primary);font-weight:500}
@@ -1229,25 +1244,22 @@ function selectionRoleLabel(role) {
  * selected text is the context; surrounding answer/session data is deliberately
  * not copied wholesale, so the sidebar prompt stays predictable and editable.
  */
-function buildSelectionBlock(selection, parentTitle) {
+function selectionDraftParts(selection, parentTitle) {
   const role = selectionRoleLabel(selection.role);
   const turn = Number(selection.turn) || 0;
-  const lines = [
-    zh.selectionIntro,
-    '',
-    `### ${zh.selectionHeading}（${role}${turn > 0 ? ` · 第 ${turn} 轮` : ''}）`,
-  ];
-  for (const line of String(selection.text ?? '').split('\n')) lines.push(`> ${line}`);
-  if (selection.truncated === true) lines.push(`> …（${zh.selectionTruncated}）`);
-  lines.push('');
+  const before = `${zh.selectionIntro}\n\n### ${zh.selectionHeading}（${role}${turn > 0 ? ` · 第 ${turn} 轮` : ''}）\n`;
+  const text = String(selection.text ?? '').replace(/\r\n?/g, '\n');
+  const after = [];
+  if (selection.truncated === true) after.push(`…（${zh.selectionTruncated}）`, '');
   if (typeof parentTitle === 'string' && parentTitle.trim().length > 0) {
-    lines.push(`### ${zh.selectionSource}`);
-    lines.push(`- 主会话：${parentTitle.trim()}`);
-    lines.push('');
+    after.push(`### ${zh.selectionSource}`, `- 主会话：${parentTitle.trim()}`, '');
   }
-  lines.push(zh.selectionFollowup);
-  lines.push('');
-  return clipText(lines.join('\n'), 12000);
+  after.push(zh.selectionFollowup, '');
+  return { before, text, after: after.join('\n') };
+}
+
+function buildSelectionBlock(parts) {
+  return clipText(`${parts.before}\n${parts.text.split('\n').map((line) => `> ${line}`).join('\n')}\n\n${parts.after}`, 12000);
 }
 
 /**
@@ -1276,7 +1288,8 @@ async function quoteSelectionToSidebar(parentId, parent, selection) {
   } catch {
     parentTitle = undefined;
   }
-  await appendToThreadDraft(parentId, thread, buildSelectionBlock({ ...selection, text }, parentTitle));
+  const parts = selectionDraftParts({ ...selection, text }, parentTitle);
+  await appendToThreadDraft(parentId, thread, buildSelectionBlock(parts), parts);
   return { created, threadId: thread.id, label: thread.label };
 }
 
@@ -1285,7 +1298,7 @@ async function quoteSelectionToSidebar(parentId, parent, selection) {
  * public Session input API rather than touching another tab's DOM, so it works
  * even when the target tab is closed and never sends a message by itself.
  */
-async function appendToThreadDraft(parentId, thread, text) {
+async function appendToThreadDraft(parentId, thread, text, quoteParts) {
   const conversation = typeof ctx.get === 'function' ? ctx.get('conversation') : ctx.conversation;
   const initialize = conversation?.input?.requestDraftInitialization;
   if (typeof initialize !== 'function') throw new Error('conversation.input 不可用');
@@ -1293,11 +1306,28 @@ async function appendToThreadDraft(parentId, thread, text) {
   const reference = ctx.sessions.retain(thread.id, { source: 'sidebarChat' });
   try {
     await reference.ready;
-    const result = initialize.call(conversation.input, reference.binding, {
-      prompt: text,
-      whenDraftExists: 'append',
-    });
-    if (result === 'blocked') throw new Error('目标侧边栏正在提交，请稍后再试');
+    const append = (prompt) => {
+      const result = initialize.call(conversation.input, reference.binding, { prompt, whenDraftExists: 'append' });
+      if (result === 'blocked') throw new Error('目标侧边栏正在提交，请稍后再试');
+    };
+    const target = quoteParts && typeof conversation.input.for === 'function' && reference.binding.ctx
+      ? conversation.input.for(reference.binding.ctx) : undefined;
+    if (quoteParts && typeof target?.insertQuote === 'function') {
+      // Check all native admission guards before the first draft mutation. The
+      // following appends and quote insertion stay synchronous, so no user edit
+      // can interleave. Appending the heading also moves the caret to the end.
+      const session = reference.binding.session?.getSnapshot();
+      if (!canQuoteInSession(session) || target.state.getSnapshot().phase !== 'plain'
+        || conversation.blocks?.storeFor(thread.id).getSnapshot() !== undefined) {
+        throw new Error('目标侧边栏暂时无法插入引用，请稍后再试');
+      }
+      append(quoteParts.before);
+      if (!target.insertQuote(quoteParts.text)) throw new Error('目标侧边栏暂时无法插入引用，请稍后再试');
+      append(quoteParts.after);
+    } else {
+      // Older DSH: preserve its existing plain-text draft initialization path.
+      append(text);
+    }
   } finally {
     // The target tab may not have mounted yet. Hold the scope briefly so the
     // draft write is not dropped with the last reference; once mounted, the
@@ -1664,11 +1694,158 @@ function SidebarAgentPaneActions({ parentId }) {
   );
 }
 
+/** Match the native quote admission without granting read-only children a composer. */
+function canQuoteInSession(session) {
+  return session !== undefined && !session.removed
+    && (session.subagent == null || (session.subagent.address?.mode === 'continuable' && session.subagent.parentAvailable === true));
+}
+
 /**
- * The merged selection toolbar. It lives in the normal conversation composer
- * dock only so it can use that conversation's InputActions; it renders nothing
- * until the user selects text, so it does not add a visible composer row.
+ * Only the presentation of the native quote surface is extended. DSH still owns
+ * admission, sanitized text, positioning, dismissal and quote serialization.
+ * DOM coordinates below are optional origin hints, never the selected text.
  */
+function nativeSidebarSelection(sessionId, text) {
+  const raw = String(text ?? '').trim();
+  if (!raw) return null;
+  const selection = { version: 1, surface: 'chat', role: 'assistant', turn: 0, text: raw.slice(0, SELECTION_MAX_CHARS), charCount: Math.min(raw.length, SELECTION_MAX_CHARS), truncated: raw.length > SELECTION_MAX_CHARS, capturedAt: Date.now(), sessionId };
+  const nativeSelection = typeof window.getSelection === 'function' ? window.getSelection() : null;
+  const range = nativeSelection?.rangeCount === 1 ? nativeSelection.getRangeAt(0) : undefined;
+  const start = selectionElementOf(range?.startContainer)?.closest('[data-chat-flow-kind]');
+  const end = selectionElementOf(range?.endContainer)?.closest('[data-chat-flow-kind]');
+  if (!start || start !== end || start.closest('[data-sidebar-right-panel], [data-sidebar-agent]')) return selection;
+  if (start.closest('[data-conversation-session]')?.getAttribute('data-conversation-session') !== sessionId) return selection;
+  const kind = start.getAttribute('data-chat-flow-kind');
+  selection.role = kind === 'user' || kind === 'steering' ? kind : 'assistant';
+  selection.turn = Number(start.getAttribute('data-chat-turn') ?? start.closest('[data-chat-turn]')?.getAttribute('data-chat-turn')) || 0;
+  selection.nodeKey = start.getAttribute('data-chat-node-key') ?? '';
+  return selection;
+}
+
+function SidebarAgentNativeSelection({ dismiss, readText, clearSelection, inputActions, useSession, sessionId }) {
+  const t = useSelectionText();
+  const enabled = useSession(canQuoteInSession);
+  const embedded = parentOf(sessionId) !== undefined;
+  const list = useSessionList();
+  const [notice, setNotice] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const pending = React.useRef(false);
+  const mounted = React.useRef(true);
+  React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  React.useEffect(() => { if (!enabled) dismiss(); }, [enabled, dismiss]);
+  if (!enabled) return null;
+
+  const quote = () => {
+    const text = readText();
+    if (text === null) { dismiss(); return; }
+    if (!inputActions.insertQuote(text)) { setNotice(t('insertFailed')); return; }
+    clearSelection();
+    dismiss();
+  };
+  // Embedded sidebars keep DSH's ordinary quote action, with no recursive Ask.
+  if (embedded) return React.createElement('button', {
+    type: 'button', className: 'dsh-sa-sel-native', 'aria-label': t('quote'),
+    onPointerDown: (event) => event.preventDefault(), onClick: quote,
+  }, t('quote'));
+
+  const finishSelection = (text) => {
+    if (!mounted.current) return;
+    const current = readText();
+    // An asynchronous copy/tab operation must not dismiss a newer selection.
+    if (current !== null && current !== text) return;
+    if (current === text) clearSelection();
+    dismiss();
+  };
+  const copy = async () => {
+    const text = readText();
+    if (text === null) { dismiss(); return; }
+    try {
+      await selectionCopyText(text);
+      finishSelection(text);
+    } catch {
+      if (mounted.current) setNotice(t('copyFailed'));
+    }
+  };
+  const ask = async () => {
+    if (pending.current) return;
+    const text = readText();
+    if (text === null) { dismiss(); return; }
+    // Capture before creating/restoring a tab can move focus or the Selection.
+    const selection = nativeSidebarSelection(sessionId, text);
+    if (selection === null) { dismiss(); return; }
+    pending.current = true;
+    setBusy(true);
+    setNotice(t('pending'));
+    try {
+      const result = await quoteSelectionToSidebar(sessionId, {
+        cwd: list.byId[sessionId]?.cwd,
+        preset: list.projectionsBySession?.[sessionId]?.values?.agentPreset,
+      }, selection);
+      if (result?.cancelled) {
+        if (mounted.current) setNotice(t('cancelled'));
+        return;
+      }
+      finishSelection(text);
+    } catch (cause) {
+      console.error('[sidebar-agent] native selection ask failed', cause);
+      if (mounted.current) setNotice(`${t('askFailed')}: ${cause?.message ?? 'unknown'}`);
+    } finally {
+      pending.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  };
+  return React.createElement('div', {
+    className: 'dsh-sa-sel-native', role: 'toolbar', 'aria-label': t('toolbar'),
+    'data-sidebar-agent-selection': 'native', 'aria-busy': busy,
+    onPointerDown: (event) => event.preventDefault(),
+  },
+  React.createElement('button', { type: 'button', className: 'dsh-sa-sel-btn', disabled: busy, onClick: () => void copy() }, t('copy')),
+  React.createElement('span', { className: 'dsh-sa-sel-sep', 'aria-hidden': true }),
+  React.createElement('button', { type: 'button', className: 'dsh-sa-sel-btn', disabled: busy, onClick: quote }, t('quote')),
+  React.createElement('button', { type: 'button', className: 'dsh-sa-sel-btn dsh-sa-sel-btn-primary', disabled: busy, onClick: () => void ask() }, t('ask')),
+  notice ? React.createElement('span', { className: 'dsh-sa-sel-status', role: 'status' }, notice) : null);
+}
+
+let nativeSelectionActive = false;
+const selectionModeListeners = new Set();
+function setNativeSelectionActive(value) {
+  if (nativeSelectionActive === value) return;
+  nativeSelectionActive = value;
+  for (const listener of [...selectionModeListeners]) listener();
+}
+function subscribeSelectionMode(listener) {
+  selectionModeListeners.add(listener);
+  return () => selectionModeListeners.delete(listener);
+}
+function SidebarAgentSelectionEntry(props) {
+  const native = React.useSyncExternalStore(subscribeSelectionMode, () => nativeSelectionActive);
+  return native ? null : React.createElement(SidebarAgentSelectionToolbar, props);
+}
+
+/** Feature detection also follows enabling/disabling message-quotes at runtime. */
+function startSelectionIntegration(context) {
+  const interactions = context.get('uiConversation')?.interactions;
+  if (typeof interactions?.getSnapshot !== 'function' || typeof interactions.subscribe !== 'function') return undefined;
+  let disposeSurface;
+  const sync = () => {
+    const hasQuote = interactions.getSnapshot().includes('quote');
+    if (hasQuote && !disposeSurface) {
+      disposeSurface = context.slots.inject(SELECTION_SLOT, () => {
+        const dispose = context.slots.register({ name: SELECTION_SLOT, key: 'quote', priority: -100 }, SidebarAgentNativeSelection);
+        setNativeSelectionActive(true);
+        return () => { setNativeSelectionActive(false); dispose(); };
+      });
+    } else if (!hasQuote && disposeSurface) {
+      disposeSurface();
+      disposeSurface = undefined;
+    }
+  };
+  const unsubscribe = interactions.subscribe(sync);
+  try { sync(); } catch (error) { unsubscribe(); throw error; }
+  return () => { unsubscribe(); disposeSurface?.(); setNativeSelectionActive(false); };
+}
+
+/** Legacy DSH fallback; never mounted while the native quote surface is active. */
 function SidebarAgentSelectionToolbar({ inputActions, sessionId }) {
   const list = useSessionList();
   const [selection, setSelection] = React.useState(null);
@@ -2226,6 +2403,8 @@ window.__ModuleLoader__.load({
     function applyInner(context) {
       context.effect(() => installStyle(), 'sidebar-agent: styles');
       context.effect(() => context.locale.register(QUESTIONS_NS, questionText), 'sidebar-agent: question language');
+      context.effect(() => context.locale.register(SELECTION_NS, selectionText), 'sidebar-agent: selection language');
+      context.effect(() => startSelectionIntegration(context), 'sidebar-agent: native quote integration');
       context.effect(() => () => dismissQuestionMenu(), 'sidebar-agent: dismiss questions');
       context.effect(() => startQuestionSync(), 'sidebar-agent: archive synchronization');
       context.effect(() => context.slots.inject('conversation.chat.commandview', () => context.slots.register({
@@ -2295,14 +2474,13 @@ window.__ModuleLoader__.load({
         order: 15,
       }, SidebarAgentCreateAction)), 'sidebar-agent: header action');
 
-      // The slot is only a session-scoped source of InputActions for the
-      // floating toolbar. It renders null until text is selected, so the main
-      // composer stays a single row; the toolbar itself is position: fixed.
+      // Old DSH has no native quote interaction. New DSH renders in the Chat
+      // surface above; this entry returns null and installs no global listeners.
       context.effect(() => context.slots.inject('conversation.composer.dock', () => context.slots.register({
         name: 'conversation.composer.dock',
         id: 'sidebar-agent-selection',
         order: 20,
-      }, SidebarAgentSelectionToolbar)), 'sidebar-agent: selection toolbar');
+      }, SidebarAgentSelectionEntry)), 'sidebar-agent: legacy selection fallback');
     }
 
     return {

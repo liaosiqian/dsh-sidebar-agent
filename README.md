@@ -16,6 +16,16 @@
 
 点击蓝色气泡或数量角标可打开问答列表；点击已归档条目会取消归档并恢复右侧标签。等待回答、等待审批、计划待确认、运行和未读状态优先于装饰图标显示，空闲后自动恢复。
 
+## 0.3.4：适配 DSH 原生选区引用
+
+- DSH `0.2.2-rc.1` 已内置 `message-quotes`。检测到原生 `quote` 交互时，本插件把 `复制 / 引用文本 / 在侧边栏提问` 合并到同一个 `conversation.chat.text-interaction` 浮条，不再挂载旧的全局选区监听和 composer 浮条。
+- 选区准入、可见文本提取、浮条定位、滚动跟随和关闭交给 DSH；`引用文本` 直接调用 `inputActions.insertQuote()`，沿用原生引用块、编辑及序列化行为。引用和复制保留原生完整选区，只有侧边栏摘录沿用 4000 字符上限。
+- `在侧边栏提问` 会在目标侧边栏调用同一个原生 `insertQuote()`，把选中原文放入原生引用块；来源、轮次提示和「我的追问」保留在引用块外。只创建/复用侧边栏并追加草稿，不自动发送，也不覆盖已有草稿或附件。连续点击不会重复插入；输入框正在提交或被阻止时，写入前即拒绝。子侧边栏保留普通原生引用，不提供再次嵌套提问。
+- 当前 DSH 没有向原生浮条追加按钮的 list Slot，因此只覆盖 `quote` 的 keyed renderer（优先级 -100），保留原生准入与引用规则，不替换 DSH 文件。卸载插件后原生 renderer 自动恢复。若另一个插件也覆盖同一个 `quote` renderer，仍需协调优先级。
+- 通过运行时能力检测兼容旧版 DSH；原生引用禁用、尚未挂载或不存在时回退旧浮条，启用后自动切回。原有侧边栏会话和历史键不迁移。
+
+验证：`node --test archive.test.js client.test.js` 的 38 项回归通过；在 DSH `0.2.2-rc.1` 安装后，实时 Slot 检查确认本插件是 `quote` 的有效 renderer，禁用插件后恢复 `message-quotes`，重新启用后恢复集成。当前没有可连接的浏览器控制通道，选区拖动、实际剪贴板、亮暗主题和窄屏视觉仍待浏览器验收；自动测试与 Slot 激活不等同于实际页面完整验收。
+
 ## 0.3.3：问答数量与其他前缀图标叠加
 
 - 只有问答时保留完整的蓝色对话气泡；同一会话的前缀插槽里还有时钟等图标时，问答数量缩成原图标右上角的蓝色角标，超过 9 条显示 `9+`，点击仍打开问答列表。
@@ -69,7 +79,7 @@ DSH 内置 subagent 在本地激活被释放后，下一次 follow-up 会以 `de
 - **历史恢复**：`问答 N` 会列出该主会话下创建过的全部侧边栏（含已归档的）；关闭右侧栏标签会请求安全归档，不会删除会话。点击列表条目会先取消归档，再恢复标签和原对话。没有打开任何侧边栏标签时，主会话标题栏会保留一个 `问答 N` 入口。
 - **从主会话引用上下文**：右侧栏侧边栏标签顶部的 `引用主会话` 会读取主会话已加载的 Session 事件（用户提问、助手回答、工具调用、压缩摘要），而不是只扫 DOM。弹层顶部可以一键 `引用主会话总结`（最近多轮脉络 + 关键回答 + 工具动作 + 已有压缩摘要），也可以选择单条提问，并按 `问题 + 完整回答 + 上下文` / `问题 + 完整回答` / `仅问题` 三种范围插入。默认追加到**当前打开的侧边栏**；没有打开的侧边栏时才新建。下拉框仍可手动选择其他已有侧边栏或 `+ 新建侧边栏`。插入目标是侧边栏 composer 的**草稿**，不会自动发送，也不会在主会话里留下任何消息。侧边栏是独立 Session，不会自动合并主会话；自动上下文只提供最近/增量参考，手动引用用于精确指定要带过去的轮次。
 - **主会话总结**：总结由本地事件整理，不额外调用模型；包含主会话标题、最近轮次、每轮问题与回答要点、工具动作、最后一次回答和已有的 `compaction/summary`。如果打开了较早的侧边栏历史，会额外加载最多两页主会话旧消息；仍可能少于完整历史，草稿里会注明“更早历史未加载”。
-- **选中文本操作（内置）**：在主会话消息里选中文字，浮条提供 `复制`、`引用`、`在侧边栏提问`。`引用` 把选中原文以引用块插入主会话 composer 草稿；`在侧边栏提问` 直接把原文追加到**当前打开的侧边栏**草稿，没有打开的侧边栏才新建。两条路径都不会自动发送。浮条不会出现在侧边栏内部会话、composer 或右侧栏面板中；新侧边栏仍进入本插件的历史记录。
+- **选中文本操作（内置）**：在主会话消息里选中文字，浮条提供 `复制`、`引用文本`、`在侧边栏提问`。新版 DSH 使用原生选区交互和 `insertQuote()`，`引用文本` 把选中原文插入当前主会话 composer 的原生引用块；旧版使用兼容浮条和 Markdown 引用。`在侧边栏提问` 直接把原文追加到**当前打开的侧边栏**草稿，没有打开的侧边栏才新建。两条路径都不会自动发送。插件的侧边栏提问入口只在主会话出现；子侧边栏保留原生普通引用，composer 和其他右侧栏面板不触发。
 - **历史移除**：历史弹层每行右侧的 `×` 会先展开“移除这条历史入口？”确认；确认后才把该侧边栏从当前主会话的历史映射中移除（并关闭对应标签），但**不删除子 Session**；适合清理入口，不适合删除对话内容。
 - **独立模型**：子会话的模型选择是 per-session 的。子会话有明确选择后，主会话改模型不会影响它；子会话改模型也不会改主会话。
 - **权限独立**：权限模式、计划模式、附件、停止/排队都走标准 composer，作用域是当前子会话。
@@ -104,7 +114,7 @@ sidebar-agent/
 - 自动上下文：Host 监听 `agent/pre-step`，只在每轮第一步、且该步包含真实人类消息时执行。首次读取主会话事件并生成初始包；之后只取 `seq > 上次同步位置` 的事件生成增量包。注入消息的 `source.kind` 是 `sidebar-agent`，不会追加到主会话，也不会触发主会话运行。注入消息的 `source.sections` 里带一个 `sidebar-agent-sync` 同步位置；Host 模块重载后可从侧边栏自己的日志里恢复该位置，避免重复注入整包历史。
 - 注入位置：独立上下文消息插在人类提问之前，因此不会把大段上下文写进用户消息正文；侧边栏当前嵌入式视图不会把注入正文当普通提问展示。
 - 上下文读取：优先 `ctx.sessions.get(parentId).snapshotEvents()`；主会话未激活时回退 `sessionQuery.readSession(parentId)`。所有格式化和截断都在 Host 完成，客户端不参与。
-- 入口类型：主会话标题走 `conversation.session.header.actions`；侧边栏标签顶部工具条渲染在 `sidebar.right.pane.tab` 的标签体内。选区浮条只借用 `conversation.composer.dock` 取得当前会话的 `inputActions`，未选中文本时返回 `null`，不会新增可见 composer 行；主会话底部不会多出一行，左侧栏也没有重复入口。
+- 入口类型：主会话标题走 `conversation.session.header.actions`；侧边栏标签顶部工具条渲染在 `sidebar.right.pane.tab` 的标签体内。新版选区浮条使用 `conversation.chat.text-interaction` 的 `quote` renderer；`conversation.composer.dock` 只保留旧版兼容入口，原生引用启用时返回 `null`，不会安装全局选区监听，也不会新增可见 composer 行。
 - 标签类型：`ctx.sidebarRightTabs.register({ id, kind: 'sidebaragent', multiple: true, title })`。
 - 打开标签：`ctx.sidebarRight.openTabIn(parentSessionId, 'sidebaragent', { params: { childId, parentId, label } })`。
 - 标签体：`useTabInfo()` 取 `contentId` / `navigation.params`，`ctx.sessions.retain(childId)` 后套 `SessionProvider`，渲染 `sidebar.agent.conversation`。
@@ -112,7 +122,7 @@ sidebar-agent/
 - 标签恢复：右侧栏布局刷新后只保留 `contentId`，所以打开标签时通过标签类型的 `title(address)` 回调把 `address -> { childId, parentId, label }` 写进 localStorage；刷新后标签体与标题从该映射恢复。
 - 引用上下文：`ctx.sessions.retain(parentId, { source: 'sidebarChat' })` 读取 `eventSource.getSnapshot()`，按 `turn/start`、`user/message`、`assistant/message`、`tool/call`、`compaction/summary` 重建轮次；只有 `source.kind === 'user'` 的 user 事件算人类提问，合成注入/压缩替换不会混入。DOM 扫描只作为 Session 尚未 ready 时的 fallback。总结按钮会调用 `loadOlder()` 最多两页旧历史。
 - 历史弹层：标签顶部工具条里用 fixed 定位并向下展开；主会话标题栏的恢复入口也向下展开，避免被视口顶部裁切。
-- 选区浮条：解析主会话 `[data-chat-flow-kind]` 中的 Selection/Range，拒绝 composer、右侧栏和 `[data-sidebar-agent]` 内的选区；浮条固定定位在选区上方/下方。`在侧边栏提问` 直接调用 `createThread` + `appendToThreadDraft`，走正常 Session composer，不创建额外只读线程；没有全局 `window` 桥接。
+- 选区浮条：通过 `ctx.get('uiConversation').interactions` 的 `getSnapshot/subscribe` 检测原生 `quote`，只在同名 Slot 声明存在时启用集成，声明或插件卸载时自动释放。选中文字来自原生 `readText()`，DOM 只补充可选的轮次/角色提示；无法识别来源轮次时仍可提问，Host 回退最近上下文。旧版才扫描 Selection/Range。`在侧边栏提问` 直接调用 `createThread` + `appendToThreadDraft`，走正常 Session composer，不创建额外只读线程；没有全局 `window` 桥接。
 
 ## localStorage 键
 
@@ -137,7 +147,7 @@ https://github.com/liaosiqian/dsh-sidebar-agent.git
 需要固定版本时使用 tag：
 
 ```text
-https://github.com/liaosiqian/dsh-sidebar-agent.git#v0.3.3
+https://github.com/liaosiqian/dsh-sidebar-agent.git#v0.3.4
 ```
 
 也可以让 Agent 执行：
@@ -168,7 +178,7 @@ target: https://github.com/liaosiqian/dsh-sidebar-agent.git
 - 标签与历史入口的映射只在当前浏览器 localStorage；换浏览器打开同一 Session 不会自动恢复侧边栏入口，但子会话本身仍在 Session 列表里。
 - 关闭右侧栏标签不删除子会话，避免误删对话；历史条目右侧的 `×` 只移除历史映射，也不删除子会话。DSH 本身提供归档与恢复，不提供会话日志删除。
 - `引用主会话` 引用的是主会话里的**整条用户提问**或**事件摘要**，不是任意选中片段；选中片段请用内置浮条的 `在侧边栏提问`，会进入当前侧边栏草稿。
-- 选区提问目前以**引用文本块**插入草稿，不是附件 chip；草稿只带选中原文，但 Host 会优先补上选中内容所属轮次附近的主会话对话，再补最近轮次；如果无法解析所属轮次，则回退最近 6 轮。需要精确控制时仍可用 `引用主会话`。
+- 选区提问在新版 DSH 中插入目标侧边栏的**原生引用块**；发送时由 DSH 序列化为普通 Markdown 引用。旧版没有 `insertQuote()` 时才回退普通引用文本。草稿只带选中原文，Host 会优先补上选中内容所属轮次附近的主会话对话，再补最近轮次；无法解析所属轮次时回退最近 6 轮。工具条的 `引用主会话` 整轮/总结功能仍插入可编辑文本，不转为整段原生引用。
 - 选区提问默认复用打开的侧边栏；浮条本身没有“新建侧边栏”按钮，需要新侧边栏时可以直接在浮条点 `在侧边栏提问`（没有打开的侧边栏时会新建，已有历史时会先确认），也可以先用主会话标题栏的 `+ 侧边栏` 打开一个再选。
 - 引用范围由弹层里的下拉框控制；`问题 + 完整回答 + 上下文` 会插入整条提问、该轮回答、相邻轮次和最近 5 轮脉络，`问题 + 完整回答` 只插入前两项，`仅问题` 只插入问题。超长内容会截断，并在草稿里标注 `reference-only`。
 - 总结来自本地事件整理，不是模型再总结；事件窗口只包含当前已加载的历史。总结按钮会最多加载两页旧历史，但很长的会话仍可能显示“更早历史未加载”。已有压缩摘要会一并带入，不会重复展开被压缩掉的原文。
