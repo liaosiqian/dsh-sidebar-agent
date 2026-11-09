@@ -50,6 +50,7 @@ function fixture(rows = [], { nativeQuote = false, nativeSlot = true, interactio
     const registrationOptions = new Map();
     const slotInjections = new Set();
     const interactions = observable(nativeQuote ? ['quote'] : []);
+    let interactionsAvailable = interactionService;
     const drafts = new Map();
     const insertions = [];
     const nativeQuotes = [];
@@ -73,11 +74,12 @@ function fixture(rows = [], { nativeQuote = false, nativeSlot = true, interactio
       setLocale(id) { localeState.set({ id }); },
       blockDraft(value) { draftBlocked = value; },
       setNativeQuote(enabled) { interactions.set(enabled ? ['quote'] : []); },
+      setInteractionService(enabled) { interactionsAvailable = enabled; },
       setNativeSlot(enabled) {
         for (const injection of slotInjections) {
           if (injection.name !== 'conversation.chat.text-interaction') continue;
           if (!enabled) { injection.dispose?.(); injection.dispose = undefined; }
-          else if (!injection.dispose) injection.dispose = injection.register();
+          else if (!injection.dispose) injection.dispose = injection.register() ?? (() => {});
         }
       },
       emit(type, event) { for (const listener of [...(events.get(type) ?? [])]) listener(event); },
@@ -134,7 +136,7 @@ function fixture(rows = [], { nativeQuote = false, nativeSlot = true, interactio
         subscribe: localeState.subscribe,
       },
       get: (name) => {
-        if (name === 'uiConversation') return interactionService ? { interactions } : undefined;
+        if (name === 'uiConversation') return interactionsAvailable ? { interactions } : undefined;
         if (name === 'conversation') return {
           blocks: { storeFor: () => ({ getSnapshot: () => quoteBlocked ? { reason: 'blocked' } : undefined }) },
           input: {
@@ -161,7 +163,7 @@ function fixture(rows = [], { nativeQuote = false, nativeSlot = true, interactio
         inject(name, register) {
           const injection = { name, register, dispose: undefined };
           slotInjections.add(injection);
-          if (name !== 'conversation.chat.text-interaction' || nativeSlot) injection.dispose = register();
+          if (name !== 'conversation.chat.text-interaction' || nativeSlot) injection.dispose = register() ?? (() => {});
           return () => { injection.dispose?.(); slotInjections.delete(injection); };
         },
         register(options, component) {
@@ -464,6 +466,25 @@ test('native admission can register before its Slot without suppressing the lega
   page.setNativeSlot(true);
   assert.equal(page.render(legacySeat), null);
   page.dispose();
+});
+
+test('cold page boot waits for the native Slot and later Conversation service', () => {
+  const page = fixture([], { nativeQuote: true, nativeSlot: false, interactionService: false }).page();
+  assert.equal(page.registrationOptions.has(nativeSeat), false);
+  assert.equal(page.render(legacySeat).type.name, 'SidebarAgentSelectionToolbar');
+  page.setInteractionService(true);
+  page.setNativeSlot(true);
+  assert.equal(page.registrationOptions.get(nativeSeat)?.key, 'quote');
+  assert.equal(page.render(legacySeat), null);
+  assert.equal(selectionSurface(page).buttons.length, 3);
+  page.setNativeSlot(false);
+  assert.equal(page.interactions.listenerCount, 0);
+  page.setInteractionService(false);
+  page.setInteractionService(true);
+  page.setNativeSlot(true);
+  assert.equal(selectionSurface(page).buttons.length, 3);
+  page.dispose();
+  assert.equal(page.interactions.listenerCount, 0);
 });
 
 test('read-only child Sessions cannot quote and sidebar children never offer recursive Ask', () => {

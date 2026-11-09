@@ -16,6 +16,13 @@
 
 点击蓝色气泡或数量角标可打开问答列表；点击已归档条目会取消归档并恢复右侧标签。等待回答、等待审批、计划待确认、运行和未读状态优先于装饰图标显示，空闲后自动恢复。
 
+## 0.3.5：修复刷新后选区浮条只剩原生引用
+
+- 修复 `0.3.4` 的启动顺序问题：页面刷新时，本插件可能先于 `uiConversation` 服务启动，一次性能力检查跳过后不再重试，导致只剩 DSH 的「引用文本」。热安装时服务已经存在，因此此前安装后检查没有覆盖到此情况。
+- 改为先等待 `conversation.chat.text-interaction` 声明，再读取声明方已经依赖的 `uiConversation` 并订阅原生引用注册。插槽销毁或重建时重新绑定，插件卸载时清理订阅。
+- 增加冷启动回归：插件先启动、会话服务后启动、选区插槽最后声明，以及插槽销毁后重建。修复前该测试失败，修复后与其他 38 项回归一起通过。
+- 在原先仅有原生 `message-quotes` 注册的连接页面上重新应用后，实时 Slot 检查已确认本插件恢复为 `quote` 的有效 renderer。仍没有浏览器控制通道，页面实际刷新、拖选和视觉效果待浏览器验收。
+
 ## 0.3.4：适配 DSH 原生选区引用
 
 - DSH `0.2.2-rc.1` 已内置 `message-quotes`。检测到原生 `quote` 交互时，本插件把 `复制 / 引用文本 / 在侧边栏提问` 合并到同一个 `conversation.chat.text-interaction` 浮条，不再挂载旧的全局选区监听和 composer 浮条。
@@ -147,7 +154,7 @@ https://github.com/liaosiqian/dsh-sidebar-agent.git
 需要固定版本时使用 tag：
 
 ```text
-https://github.com/liaosiqian/dsh-sidebar-agent.git#v0.3.4
+https://github.com/liaosiqian/dsh-sidebar-agent.git#v0.3.5
 ```
 
 也可以让 Agent 执行：

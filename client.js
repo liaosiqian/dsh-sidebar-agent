@@ -1822,27 +1822,36 @@ function SidebarAgentSelectionEntry(props) {
   return native ? null : React.createElement(SidebarAgentSelectionToolbar, props);
 }
 
-/** Feature detection also follows enabling/disabling message-quotes at runtime. */
+/**
+ * Wait for Chat's declaration before reading its Conversation dependency. During
+ * a cold page boot this plugin can apply before uiConversation exists; a one-time
+ * capability check there would silently disable integration until a hot reload.
+ */
 function startSelectionIntegration(context) {
-  const interactions = context.get('uiConversation')?.interactions;
-  if (typeof interactions?.getSnapshot !== 'function' || typeof interactions.subscribe !== 'function') return undefined;
-  let disposeSurface;
-  const sync = () => {
-    const hasQuote = interactions.getSnapshot().includes('quote');
-    if (hasQuote && !disposeSurface) {
-      disposeSurface = context.slots.inject(SELECTION_SLOT, () => {
-        const dispose = context.slots.register({ name: SELECTION_SLOT, key: 'quote', priority: -100 }, SidebarAgentNativeSelection);
+  return context.slots.inject(SELECTION_SLOT, () => {
+    const interactions = context.get('uiConversation')?.interactions;
+    if (typeof interactions?.getSnapshot !== 'function' || typeof interactions.subscribe !== 'function') return undefined;
+    let disposeSurface;
+    const sync = () => {
+      const hasQuote = interactions.getSnapshot().includes('quote');
+      if (hasQuote && !disposeSurface) {
+        disposeSurface = context.slots.register({ name: SELECTION_SLOT, key: 'quote', priority: -100 }, SidebarAgentNativeSelection);
         setNativeSelectionActive(true);
-        return () => { setNativeSelectionActive(false); dispose(); };
-      });
-    } else if (!hasQuote && disposeSurface) {
-      disposeSurface();
-      disposeSurface = undefined;
-    }
-  };
-  const unsubscribe = interactions.subscribe(sync);
-  try { sync(); } catch (error) { unsubscribe(); throw error; }
-  return () => { unsubscribe(); disposeSurface?.(); setNativeSelectionActive(false); };
+      } else if (!hasQuote && disposeSurface) {
+        const dispose = disposeSurface;
+        disposeSurface = undefined;
+        setNativeSelectionActive(false);
+        dispose();
+      }
+    };
+    const unsubscribe = interactions.subscribe(sync);
+    try { sync(); } catch (error) { unsubscribe(); throw error; }
+    return () => {
+      unsubscribe();
+      setNativeSelectionActive(false);
+      disposeSurface?.();
+    };
+  });
 }
 
 /** Legacy DSH fallback; never mounted while the native quote surface is active. */

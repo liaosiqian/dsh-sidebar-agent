@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-sidebar-agent",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "private": true,
   "description": "Independent sidebar agents mounted under a main session, with the full DSH composer, automatic main-session context, and a built-in selection toolbar.",
   "type": "module",
