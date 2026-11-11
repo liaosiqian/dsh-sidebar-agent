@@ -16,6 +16,19 @@
 
 import { randomUUID } from 'node:crypto';
 import { SidebarQuestionArchive, archiveInput, questionRequestHandler } from './archive.js';
+import z from '@deepseek-ai/schemastery';
+import { SidebarModels, modelInput, modelRequestHandler, nativeModelRequestHandler } from './models.js';
+
+export const Config = z.object({
+  modelDefaults: z.object({
+    mode: z.union(['dsh', 'parent', 'fixed']).default('dsh'),
+    fixed: z.object({
+      provider: z.string().min(1).required(),
+      model: z.string().min(1).required(),
+      reasoningEffort: z.string().min(1),
+    }).default(undefined),
+  }).default({ mode: 'dsh' }).volatile(),
+});
 
 const PREFIX = 'session-sb-';
 const MARKER = '[侧边栏主会话上下文]';
@@ -341,9 +354,31 @@ async function buildContext(ctx, childId, parentId, anchorTurn) {
   return { text: context, parentSeq: maxSeq };
 }
 
-export const inject = ['sessions', 'workspaceRegistry', 'storage', 'connection', 'tools'];
+export const inject = ['sessions', 'workspaceRegistry', 'storage', 'connection', 'tools', 'llm', 'sessionController', 'sessionProjections', 'typertGateway', 'settings'];
 
-export async function apply(ctx) {
+export async function apply(ctx, config) {
+  const models = new SidebarModels(ctx, config, parentOf);
+  ctx.provide('sidebarModels', models);
+  ctx.effect(() => () => models.dispose(), 'sidebar-agent: model operations');
+  ctx.effect(() => ctx.settings.configure({ auto: false }), 'sidebar-agent: dedicated model settings page');
+  ctx.on('agent/created', (payload) => models.initialize(payload));
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: '/api/sidebar-agent/models', methods: ['POST'], requestBody: 'buffered',
+    fetch: modelRequestHandler(models),
+  }), 'sidebar-agent: model settings requests');
+  // Exact owner-only route takes precedence over the shared RPC dispatcher.
+  // Main Sessions are delegated through the Gateway with its normal validation.
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: '/api/session/selectModel', methods: ['POST'], requestBody: 'buffered',
+    fetch: nativeModelRequestHandler(models, ctx.typertGateway, ctx.connection.browserPeer, parentOf),
+  }), 'sidebar-agent: native sidebar model isolation');
+  ctx.effect(() => ctx.tools.register({
+    name: 'sidebar_models',
+    description: 'Read DSH models and sidebar defaults, configure defaults for new sidebars, or change one sidebar model and reasoning effort. Sidebar choices leave the DSH global default unchanged.',
+    parameters: modelInput,
+    output: { schema: { type: 'object', additionalProperties: true }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
+    execute: (input) => models.run(input),
+  }), 'sidebar-agent: model tool');
   const unit = await ctx.storage.backend.get('json').kv.open({
     name: 'sidebar_agent_questions', version: 1, tables: ['questions'], hasGlobal: false,
   });

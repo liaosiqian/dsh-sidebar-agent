@@ -1,8 +1,16 @@
 {
   "name": "@local/dsh-sidebar-agent",
-  "version": "0.3.5",
+  "version": "0.4.0",
+  "engines": { "dsh": ">=0.2.2-rc.1" },
+  "scripts": {
+    "build": "node build-client.mjs",
+    "test": "node build-client.mjs --check && node --test *.test.js"
+  },
   "private": true,
-  "description": "Independent sidebar agents mounted under a main session, with the full DSH composer, automatic main-session context, and a built-in selection toolbar.",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "~3.19.0"
+  },
+  "description": "Independent sidebar agents mounted under a main session, with the full DSH composer, automatic main-session context, a built-in selection toolbar, and isolated model and reasoning defaults.",
   "type": "module",
   "exports": {
     ".": "./index.js",
@@ -13,6 +21,7 @@
   "files": [
     "index.js",
     "archive.js",
+    "models.js",
     "client.js",
     "cordis.patch.yml",
     "locale/*.json",
